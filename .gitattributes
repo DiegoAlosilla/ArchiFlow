@@ -1,0 +1,8 @@
+# Normalizar finales de línea: el proyecto se desarrolla en Windows pero el
+# CLI se publica en npm y se ejecuta también en Linux y macOS.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary
