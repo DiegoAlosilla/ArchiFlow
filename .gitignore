@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+
+# Artefactos de exportación generados desde los ejemplos
+examples/*.drawio
+examples/*.md
+!examples/README.md

@@ -1,0 +1,215 @@
+archiflow: 1
+name: Consulta de Cuentas
+description: >-
+  Recorrido de la consulta de cuentas desde la app móvil hasta la base de datos,
+  incluyendo la caché de la capa de experiencia y el evento de auditoría.
+owner: Equipo Cuentas
+updated: 2026-07-29
+
+# Las zonas son el layering del banco. El layout las respeta como carriles,
+# que es lo que evita el espagueti de flechas.
+zones:
+  - id: canales
+    label: Canales
+    color: '#0ea5e9'
+
+  - id: experiencia
+    label: Experiencia (BFF)
+    platform: AKS-PROD-01
+    color: '#6366f1'
+
+  - id: negocio
+    label: Negocio
+    platform: AKS-PROD-02
+    color: '#10b981'
+
+  - id: datos
+    label: Datos
+    platform: On-premise
+    color: '#f59e0b'
+
+nodes:
+  - id: app-movil
+    label: App Móvil
+    kind: client
+    zone: canales
+    tech: iOS / Android
+    layout:
+      x: 22
+      y: 34
+
+  - id: apigw
+    label: API Gateway
+    kind: gateway
+    zone: canales
+    tech: Azure APIM
+    description: Termina TLS, valida el token OAuth2 y aplica rate limiting.
+
+  - id: bff-cuentas
+    label: bff-cuentas
+    kind: service
+    zone: experiencia
+    tech: Quarkus 3
+    repo: git@banco:cuentas/bff-cuentas.git
+    provides:
+      - id: listar-cuentas
+        method: GET
+        path: /v1/cuentas
+        description: Devuelve las cuentas del cliente autenticado con su saldo.
+
+  - id: redis-cuentas
+    label: Redis Cuentas
+    kind: cache
+    zone: experiencia
+    tech: Redis 7
+    description: Cache-aside con TTL de 60 s sobre el listado de cuentas.
+    layout:
+      x: 61
+      y: 161
+
+  - id: ms-customer
+    label: ms-customer
+    kind: service
+    zone: negocio
+    tech: Spring Boot 3.2
+    repo: git@banco:clientes/ms-customer.git
+    provides:
+      - method: GET
+        path: /internal/clientes/{id}/cuentas
+
+  - id: ms-saldos
+    label: ms-saldos
+    kind: service
+    zone: negocio
+    tech: Quarkus 3
+    provides:
+      - method: POST
+        path: /internal/saldos/consulta
+
+  - id: db-clientes
+    label: Oracle Clientes
+    kind: database
+    zone: datos
+    tech: Oracle 19c
+
+  - id: core-bancario
+    label: Core Bancario
+    kind: external
+    zone: datos
+    tech: AS/400
+    external: true
+    description: Sistema legado. Único origen de verdad del saldo en tiempo real.
+
+  - id: kafka
+    label: Kafka
+    kind: broker
+    zone: datos
+    tech: Confluent
+    topics:
+      - cuentas.consultadas
+
+  - id: ms-auditoria
+    label: ms-auditoria
+    kind: service
+    zone: negocio
+    tech: Quarkus 3
+    description: Consume eventos y los persiste para cumplimiento regulatorio.
+
+# Cada flujo es un escenario que se puede reproducir. Las aristas del diagrama
+# se infieren de estos pasos: no hace falta declararlas aparte.
+flows:
+  - id: listar-cuentas
+    label: Listar cuentas del cliente
+    trigger: El usuario abre la pantalla "Mis cuentas"
+    entry: app-movil
+    steps:
+
+      - from: apigw
+        to: bff-cuentas
+        op: GET /v1/cuentas
+        protocol: http
+        latencyMs: 8
+
+      - from: bff-cuentas
+        to: redis-cuentas
+        op: GET cuentas:{clienteId}
+        protocol: redis
+        latencyMs: 2
+        note: Cache-aside. Si hay acierto, el flujo responde aquí mismo.
+
+      - from: bff-cuentas
+        to: ms-customer
+        op: GET /internal/clientes/{id}/cuentas
+        protocol: http
+        condition: cache miss
+        latencyMs: 35
+
+      - from: ms-customer
+        to: db-clientes
+        op: SELECT * FROM cuentas WHERE cliente_id = ?
+        protocol: jdbc
+        latencyMs: 18
+        returns: Listado de cuentas sin saldo
+
+      - from: bff-cuentas
+        to: ms-saldos
+        op: POST /internal/saldos/consulta
+        protocol: http
+        latencyMs: 60
+
+      - from: ms-saldos
+        to: core-bancario
+        op: Consulta saldo en tiempo real
+        protocol: soap
+        latencyMs: 220
+        note: Es el cuello de botella del flujo.
+      - from: app-movil
+        to: apigw
+        op: GET /v1/cuentas
+        protocol: https
+        latencyMs: 40
+
+      - from: bff-cuentas
+        to: kafka
+        op: publish cuentas.consultadas
+        protocol: kafka
+        async: true
+
+      - from: kafka
+        to: ms-auditoria
+        op: consume cuentas.consultadas
+        protocol: kafka
+        async: true
+
+      - from: ms-auditoria
+        to: db-clientes
+        op: INSERT INTO auditoria_consultas
+        protocol: jdbc
+        async: true
+        latencyMs: 12
+
+  - id: listar-cuentas-cache-hit
+    label: Listar cuentas (acierto de caché)
+    description: El camino feliz cuando la caché responde. Tres saltos en vez de diez.
+    trigger: Segunda consulta dentro de la ventana de 60 s
+    entry: app-movil
+    steps:
+      - from: app-movil
+        to: apigw
+        op: GET /v1/cuentas
+        protocol: https
+        latencyMs: 40
+
+      - from: apigw
+        to: bff-cuentas
+        op: GET /v1/cuentas
+        protocol: http
+        latencyMs: 8
+
+      - from: bff-cuentas
+        to: redis-cuentas
+        op: GET cuentas:{clienteId}
+        protocol: redis
+        latencyMs: 2
+        returns: Listado completo con saldo
+        condition: cache hit

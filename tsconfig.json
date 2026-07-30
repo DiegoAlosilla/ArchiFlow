@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "types": ["node", "vitest/globals"],
+    "paths": {
+      "@archiflow/schema": ["./src/schema/index.ts"],
+      "@archiflow/shared": ["./src/shared/index.ts"],
+      "@archiflow/layout": ["./src/layout/index.ts"],
+      "@archiflow/theme": ["./src/theme.ts"]
+    }
+  },
+  "include": ["src", "web/src", "tests", "vite.config.ts", "vitest.config.ts", "tsup.config.ts"]
+}
