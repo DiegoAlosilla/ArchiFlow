@@ -2,6 +2,9 @@ node_modules/
 dist/
 *.log
 
+# Configuración local de la bóveda de Obsidian: es del editor, no del proyecto
+docs/.obsidian/
+
 # Artefactos de exportación generados desde los ejemplos
 examples/*.drawio
 examples/*.md
