@@ -87,6 +87,19 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
             )}
           </span>
         </span>
+        {node.expanded && node.provides.length > 0 && (
+          <div className="node__endpoints">
+            {node.provides.map((operation, index) => (
+              <span
+                key={operation.id ?? `${operation.method}-${operation.path}-${index}`}
+                className="node__endpoint"
+              >
+                <b>{operation.method ?? 'OP'}</b>{' '}
+                {operation.path ?? operation.label ?? operation.id ?? 'operación'}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );

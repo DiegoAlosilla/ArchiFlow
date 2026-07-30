@@ -56,6 +56,10 @@ const Id = z
     /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
     'debe empezar por letra o número y contener solo letras, números, punto, guion o guion bajo',
   );
+const NodeReference = z.string().regex(
+  /^[a-zA-Z0-9][a-zA-Z0-9._-]*(\/[a-zA-Z0-9][a-zA-Z0-9._-]*)?$/,
+  'debe ser un nodo o nodo/operación',
+);
 
 /**
  * Una operación expuesta por un nodo. Además de documentar, es la materia
@@ -124,6 +128,8 @@ export const NodeSchema = z
     tags: z.array(z.string()).default([]),
     /** Endpoints que este nodo expone. */
     provides: z.array(OperationSchema).default([]),
+    /** Dibuja las operaciones como hijos dentro de la caja del servicio. */
+    expanded: z.boolean().default(false),
     /** Topics que publica o consume (solo relevante en nodos `broker`). */
     topics: z.array(z.string()).default([]),
     /** Marca el nodo como fuera del perímetro del equipo. */
@@ -140,8 +146,8 @@ export type DiagramNode = z.infer<typeof NodeSchema>;
  */
 export const StepSchema = z
   .object({
-    from: Id,
-    to: Id,
+    from: NodeReference,
+    to: NodeReference,
     /** La operación, tal cual: "GET /v1/cuentas", "publish cuentas.consultadas". */
     op: z.string().optional(),
     /** Etiqueta legible que sustituye a `op` en el canvas si se quiere algo más corto. */
@@ -158,6 +164,9 @@ export const StepSchema = z
     latencyMs: z.number().positive().optional(),
     /** Qué devuelve, para documentar sin añadir un paso de vuelta. */
     returns: z.string().optional(),
+    /** Ejemplos libres: pueden ser JSON incompleto durante el diseño. */
+    request: z.string().optional(),
+    response: z.string().optional(),
     note: z.string().optional(),
   })
   .strict();

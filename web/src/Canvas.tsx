@@ -140,6 +140,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
       className: active.has(edge.id) ? 'is-in-flow' : 'is-out-of-flow',
     }));
   }, [computed, flow]);
+  const selectedStep = selection?.kind === 'step' ? ir.flows.find((candidate) => candidate.id === selection.flowId)?.steps[selection.index] : undefined;
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => setNodes((current) => applyNodeChanges(changes, current)),
@@ -228,6 +229,12 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable nodeStrokeWidth={2} maskColor="rgba(2,6,23,0.7)" />
         <FlowPackets flow={flow} onStepChange={onStepChange} />
+        {selectedStep && (selectedStep.request || selectedStep.response) && (
+          <div className="contract-panel">
+            {selectedStep.request && <details open><summary>Request</summary><pre>{selectedStep.request}</pre></details>}
+            {selectedStep.response && <details open><summary>Response</summary><pre>{selectedStep.response}</pre></details>}
+          </div>
+        )}
       </ReactFlow>
     </div>
   );

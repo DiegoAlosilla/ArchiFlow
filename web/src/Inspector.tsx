@@ -58,18 +58,7 @@ function NodeInspector({ ir, selection, onSelect, mutate }: Props) {
         <button
           type="button"
           className="inspector__delete"
-          onClick={() => {
-            const steps = ir.flows.reduce(
-              (total, flow) => total + flow.steps.filter((step) => step.from === node.id || step.to === node.id).length,
-              0,
-            );
-            const warning =
-              steps > 0
-                ? `Se borrará "${node.label}" y los ${steps} paso(s) que lo usan. ¿Continuar?`
-                : `¿Borrar "${node.label}"?`;
-            if (!confirm(warning)) return;
-            void mutate({ op: 'node.remove', id: node.id }).then((ok) => ok && onSelect(null));
-          }}
+          onClick={() => void mutate({ op: 'node.remove', id: node.id }).then((ok) => ok && onSelect(null))}
         >
           Borrar
         </button>
@@ -173,10 +162,7 @@ function ZoneInspector({ ir, selection, onSelect, mutate }: Props) {
         <button
           type="button"
           className="inspector__delete"
-          onClick={() => {
-            if (!confirm(`¿Borrar la zona "${zone.label}"? Sus ${zone.nodeIds.length} nodo(s) quedarán sueltos.`)) return;
-            void mutate({ op: 'zone.remove', id: zone.id }).then((ok) => ok && onSelect(null));
-          }}
+          onClick={() => void mutate({ op: 'zone.remove', id: zone.id }).then((ok) => ok && onSelect(null))}
         >
           Borrar
         </button>
@@ -233,10 +219,7 @@ function FlowInspector({ ir, selection, onSelect, mutate }: Props) {
         <button
           type="button"
           className="inspector__delete"
-          onClick={() => {
-            if (!confirm(`¿Borrar el flujo "${flow.label}" y sus ${flow.steps.length} paso(s)?`)) return;
-            void mutate({ op: 'flow.remove', id: flow.id }).then((ok) => ok && onSelect(null));
-          }}
+          onClick={() => void mutate({ op: 'flow.remove', id: flow.id }).then((ok) => ok && onSelect(null))}
         >
           Borrar
         </button>
@@ -378,6 +361,38 @@ function StepInspector({ ir, selection, onSelect, mutate }: Props) {
         placeholder="Listado de cuentas"
         onCommit={(value) => patch({ returns: value })}
       />
+
+      <TextField
+        label="Request de ejemplo"
+        value={step.request}
+        mono
+        multiline
+        hint="Texto libre; puede ser JSON incompleto durante el diseño."
+        onCommit={(value) => patch({ request: value })}
+      />
+
+      <TextField
+        label="Response de ejemplo"
+        value={step.response}
+        mono
+        multiline
+        hint="Texto libre; puede ser JSON incompleto durante el diseño."
+        onCommit={(value) => patch({ response: value })}
+      />
+
+      <button
+        type="button"
+        className="inspector__reset"
+        onClick={() => {
+          const format = (value: string | undefined) => {
+            if (!value) return value;
+            try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }
+          };
+          void mutate({ op: 'step.update', flowId: flow.id, index: selection.index, patch: { request: format(step.request), response: format(step.response) } });
+        }}
+      >
+        Formatear JSON
+      </button>
 
       <TextField label="Nota" value={step.note} multiline onCommit={(value) => patch({ note: value })} />
     </div>

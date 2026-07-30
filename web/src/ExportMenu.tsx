@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Ir } from '@archiflow/schema';
-import { toDrawio, toJson, toMermaid, toSvg } from '@archiflow/export';
+import { toArchimate, toDrawio, toJson, toMermaid, toSvg } from '@archiflow/export';
 
 /**
  * Menú de exportación.
@@ -18,7 +18,7 @@ interface Props {
   fileName: string;
 }
 
-type Format = 'svg' | 'png' | 'jpg' | 'drawio' | 'mermaid' | 'json';
+type Format = 'svg' | 'png' | 'jpg' | 'drawio' | 'mermaid' | 'json' | 'archimate';
 
 const SCALES = [1, 2, 3];
 
@@ -87,6 +87,7 @@ export function ExportMenu({ ir, flowId, fileName }: Props) {
   const [onlyFlow, setOnlyFlow] = useState(false);
   const [light, setLight] = useState(false);
   const [transparent, setTransparent] = useState(false);
+  const [archimateShapes, setArchimateShapes] = useState(false);
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -133,7 +134,13 @@ export function ExportMenu({ ir, flowId, fileName }: Props) {
           );
           break;
         case 'drawio':
-          download(new Blob([await toDrawio(ir)], { type: 'application/xml' }), `${base}.drawio`);
+          download(
+            new Blob([await toDrawio(ir, { archimate: archimateShapes })], { type: 'application/xml' }),
+            `${base}.drawio`,
+          );
+          break;
+        case 'archimate':
+          download(new Blob([await toArchimate(ir)], { type: 'application/xml' }), `${base}.xml`);
           break;
         case 'mermaid':
           download(new Blob([toMermaid(ir)], { type: 'text/markdown' }), `${base}.md`);
@@ -218,6 +225,19 @@ export function ExportMenu({ ir, flowId, fileName }: Props) {
             <button type="button" className="export__item" onClick={() => void run('drawio')}>
               <strong>draw.io</strong>
               <span>Topología y una página por flujo</span>
+            </button>
+            <label className="export__check">
+              <input
+                type="checkbox"
+                checked={archimateShapes}
+                onChange={(e) => setArchimateShapes(e.target.checked)}
+              />
+              Formas ArchiMate
+              <span className="export__note">solo draw.io</span>
+            </label>
+            <button type="button" className="export__item" onClick={() => void run('archimate')}>
+              <strong>ArchiMate</strong>
+              <span>Open Exchange, para importar en Archi</span>
             </button>
             <button type="button" className="export__item" onClick={() => void run('mermaid')}>
               <strong>Mermaid</strong>

@@ -1,7 +1,7 @@
 ---
 title: "ADR-003: Modelo extendido, páginas e interoperabilidad con Archi y draw.io"
 tags: [adr, arquitectura, archiflow, interoperabilidad]
-status: proposed
+status: accepted
 date: 2026-07-29
 deciders: [Tech Lead]
 ---
@@ -10,9 +10,19 @@ deciders: [Tech Lead]
 
 ## Estado
 
-`proposed` — decisiones tomadas, implementación pendiente. Ver [[HANDOFF]].
+`accepted` — implementado, salvo el importador de D4. Ver [[HANDOFF]].
 
-Este ADR existe para que quien continúe el trabajo **no tenga que inventarse el diseño**. Cada decisión de aquí está tomada; lo que falta es escribirla en código.
+Este ADR existía para que quien continuara el trabajo **no tuviera que inventarse el diseño**. Cómo quedó cada decisión:
+
+| Decisión | Estado |
+|---|---|
+| D1 · Endpoints dentro del servicio | Hecha, con una desviación anotada abajo |
+| D2 · Una página es un fichero | La parte que ya existía sigue igual; falta crear y renombrar desde la web |
+| D3 · Deshacer por instantáneas | Hecha |
+| D4 · ArchiMate como formato de intercambio | Exportación hecha (con vista); **el importador no está** |
+| D5 · Request y response en el paso | Hecha |
+
+**Desviación en D1.** Los endpoints no entran en ELK como hijos del nodo: el nodo crece y sus operaciones se dibujan como filas dentro de la caja. El resultado en pantalla es el que describe la decisión y la regla de resolución se mantiene intacta —`bff-cuentas/listar-cuentas` sigue resolviendo al nodo—, pero **el anidamiento se queda en dos niveles** (zona → servicio) en vez de tres. Con ello el trade-off de "tres niveles complican el layout y el enrutado" que se asume más abajo no se ha llegado a pagar.
 
 ## Contexto
 
@@ -89,6 +99,8 @@ El servidor guarda un historial en memoria del contenido de cada fichero (anillo
 | `external` | ApplicationComponent marcado fuera del perímetro |
 | Paso de flujo | Serving o Triggering, según sea síncrono o asíncrono |
 | Zona | Grouping |
+
+De `database` y `storage` se emite el DataObject; el Node tecnológico que lo aloja es una decisión de la vista y la exportación no lo modela. La pertenencia a una zona viaja además como Composition del Grouping a sus miembros, para que en Archi el grupo no quede como una caja decorativa sin relación con nada.
 
 **El importador produce borradores, igual que el analizador de código.** Un `.drawio` tiene geometría y estilos, no semántica: qué es un servicio y qué una base de datos hay que deducirlo de la forma, del color y del texto. Se acertará mucho y se fallará algo, y hay que decirlo en la salida en vez de fingir precisión. Es la misma postura que ya sostiene el ADR-001 para el escaneo de código.
 

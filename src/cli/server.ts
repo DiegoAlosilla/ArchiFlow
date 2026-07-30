@@ -42,7 +42,11 @@ export interface ServeOptions {
 }
 
 export async function serve({ root, port, open }: ServeOptions): Promise<void> {
-  let payload: DiagramsPayload = { root, diagrams: [], updatedAt: Date.now() };
+  type History = { stack: string[]; index: number };
+  const histories = new Map<string, History>();
+  const historyState = (): DiagramsPayload['history'] =>
+    Object.fromEntries([...histories].map(([id, history]) => [id, { canUndo: history.index > 0, canRedo: history.index < history.stack.length - 1 }]));
+  let payload: DiagramsPayload = { root, diagrams: [], history: {}, updatedAt: Date.now() };
 
   /**
    * Recarga y difunde. `force` sirve para el arranque; en el resto de casos se
@@ -60,7 +64,7 @@ export async function serve({ root, port, open }: ServeOptions): Promise<void> {
       diagrams.length === payload.diagrams.length &&
       diagrams.every((entry, i) => payload.diagrams[i]?.revision === entry.revision);
 
-    payload = { root, diagrams, updatedAt: Date.now() };
+    payload = { root, diagrams, history: historyState(), updatedAt: Date.now() };
     if (unchanged) return;
 
     const errors = diagrams.filter((entry) => !entry.ok);
@@ -140,10 +144,33 @@ export async function serve({ root, port, open }: ServeOptions): Promise<void> {
       };
     }
 
+    const history = histories.get(entry.id);
+    if (!history || history.stack[history.index] !== current) {
+      histories.set(entry.id, { stack: [current, result.source], index: 1 });
+    } else {
+      history.stack.splice(history.index + 1);
+      history.stack.push(result.source);
+      if (history.stack.length > 50) history.stack.shift();
+      history.index = history.stack.length - 1;
+    }
     await writeFile(file, result.source, 'utf8');
     await reload();
 
     return { ok: true, revision: revisionOf(result.source) };
+  };
+
+  const restoreHistory = async (id: string, direction: -1 | 1): Promise<MutateResponse> => {
+    const entry = payload.diagrams.find((candidate) => candidate.id === id);
+    const history = histories.get(id);
+    if (!entry || !history) return { ok: false, reason: 'not-found', error: 'no hay historial para este diagrama' };
+    const next = history.index + direction;
+    if (next < 0 || next >= history.stack.length) return { ok: false, reason: 'failed', error: 'no hay más cambios en el historial' };
+    const source = history.stack[next]!;
+    if (!parseDiagram(source).ok) return { ok: false, reason: 'invalid', error: 'la instantánea del historial no es válida' };
+    await writeFile(path.join(root, entry.file), source, 'utf8');
+    history.index = next;
+    await reload();
+    return { ok: true, revision: revisionOf(source) };
   };
 
   const readBody = (req: IncomingMessage): Promise<string> =>
@@ -177,6 +204,22 @@ export async function serve({ root, port, open }: ServeOptions): Promise<void> {
           json(result, result.ok ? 200 : result.reason === 'stale' ? 409 : 422);
         } catch (error) {
           json({ ok: false, reason: 'failed', error: (error as Error).message }, 400);
+        }
+      })();
+      return;
+    }
+
+    if ((req.url === '/api/undo' || req.url === '/api/redo') && req.method === 'POST') {
+      void (async () => {
+        try {
+          const { id } = JSON.parse(await readBody(req)) as { id?: string };
+          if (!id) throw new Error('falta id');
+          const result = await restoreHistory(id, req.url === '/api/undo' ? -1 : 1);
+          res.writeHead(result.ok ? 200 : 422, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify(result));
+        } catch (error) {
+          res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ ok: false, reason: 'failed', error: (error as Error).message }));
         }
       })();
       return;

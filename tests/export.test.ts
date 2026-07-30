@@ -3,6 +3,7 @@ import { compile } from '../src/schema/compile.js';
 import { parseDiagram } from '../src/schema/parse.js';
 import { toDrawio } from '../src/export/drawio.js';
 import { toSvg } from '../src/export/svg.js';
+import { toArchimate } from '../src/export/archimate.js';
 
 /**
  * Un fichero exportado que la herramienta destino rechaza es peor que no
@@ -98,5 +99,113 @@ describe('toSvg', () => {
   it('numera los pasos cuando se resalta un flujo', async () => {
     const svg = await toSvg(ir, { flowId: 'f' });
     expect(svg).toContain('1. GET /v1/cuentas');
+  });
+});
+
+describe('toArchimate', () => {
+  it('exporta los elementos y relaciones del IR', async () => {
+    const xml = await toArchimate(ir);
+    expect(xml).toContain('xsi:type="ApplicationService"');
+    expect(xml).toContain('xsi:type="ApplicationComponent"');
+    expect(xml).toContain('API &lt;Gateway&gt;');
+    expect(attributesWithRawMarkup(xml)).toEqual([]);
+  });
+
+  it('usa los tipos de relación del formato de intercambio, no los de Archi', async () => {
+    const xml = await toArchimate(ir);
+    // `ServingRelationship` es el formato nativo de Archi; el XSD del Open
+    // Exchange solo admite `Serving`, y con el sufijo rechaza el fichero entero.
+    expect(xml).toContain('xsi:type="Serving"');
+    expect(xml).not.toContain('ServingRelationship');
+  });
+
+  it('produce identificadores válidos como xsd:ID', async () => {
+    const numeric = compile(
+      parseDiagram(`archiflow: 1\nname: Ids\nnodes:\n  - id: 1-canal\n  - id: 2.servicio\nflows:\n  - id: f\n    steps:\n      - from: 1-canal\n        to: 2.servicio\n`)
+        .diagram!,
+    );
+    const xml = await toArchimate(numeric);
+    for (const [, id] of xml.matchAll(/(?:identifier|source|target|elementRef|relationshipRef)="([^"]*)"/g)) {
+      // Un xsd:ID no puede empezar por dígito ni llevar caracteres raros; los
+      // ids de las aristas son `origen__destino`, así que hay que sanearlos.
+      expect(id).toMatch(/^[a-zA-Z_][a-zA-Z0-9._-]*$/);
+    }
+  });
+
+  it('incluye una vista con geometría y las referencias resueltas', async () => {
+    const xml = await toArchimate(ir);
+    expect(xml).toContain('<views><diagrams><view identifier="view-topologia"');
+    // Sin vista Archi importa el modelo pero no dibuja nada.
+    expect(xml).toMatch(/<node identifier="view-svc" elementRef="n-svc" xsi:type="Element" x="\d+"/);
+
+    const declared = new Set([...xml.matchAll(/identifier="([^"]*)"/g)].map((match) => match[1]));
+    for (const [, reference] of xml.matchAll(/(?:source|target|elementRef|relationshipRef)="([^"]*)"/g)) {
+      expect(declared).toContain(reference);
+    }
+  });
+
+  it('no emite coordenadas negativas', async () => {
+    // El lienzo de ArchiFlow no tiene origen y una zona arrastrada hacia arriba
+    // acaba en negativo; el XSD las declara `nonNegativeInteger` y rechaza el
+    // fichero completo.
+    const arrastrado = compile(
+      parseDiagram(
+        `archiflow: 1\nname: Arrastrado\nzones:\n  - id: canales\n    layout:\n      x: -120\n      y: -31\n      width: 300\n      height: 200\nnodes:\n  - id: app\n    zone: canales\n  - id: api\n    zone: canales\nflows:\n  - id: f\n    steps:\n      - from: app\n        to: api\n`,
+      ).diagram!,
+    );
+    const xml = await toArchimate(arrastrado);
+    expect(xml).not.toMatch(/(?:x|y|w|h)="-/);
+  });
+
+  it('mantiene el orden de hijos que exige el XSD', async () => {
+    const xml = await toArchimate(ir);
+    expect(xml.indexOf('<name')).toBeLessThan(xml.indexOf('<elements>'));
+    expect(xml.indexOf('<elements>')).toBeLessThan(xml.indexOf('<relationships>'));
+    expect(xml.indexOf('<relationships>')).toBeLessThan(xml.indexOf('<views>'));
+  });
+});
+
+describe('nodos expandidos', () => {
+  const expanded = compile(
+    parseDiagram(
+      `archiflow: 1\nname: Endpoints\nnodes:\n  - id: api\n    kind: gateway\n  - id: cuentas\n    expanded: true\n    provides:\n      - id: listar\n        method: GET\n        path: /v1/cuentas\n      - id: detalle\n        method: POST\n        path: /v1/cuentas/{id}\nflows:\n  - id: f\n    steps:\n      - from: api\n        to: cuentas/listar\n`,
+    ).diagram!,
+  );
+
+  it('dibuja todas las operaciones en el SVG', async () => {
+    const svg = await toSvg(expanded);
+    expect(svg).toContain('/v1/cuentas/{id}');
+    expect(svg).toContain('>POST<');
+  });
+
+  it('dibuja todas las operaciones en draw.io', async () => {
+    const xml = await toDrawio(expanded);
+    expect(xml).toContain('POST /v1/cuentas/{id}');
+    expect(attributesWithRawMarkup(xml)).toEqual([]);
+  });
+
+  it('sin expandir solo asoma la primera operación', async () => {
+    const compact = compile(
+      parseDiagram(
+        `archiflow: 1\nname: Endpoints\nnodes:\n  - id: cuentas\n    provides:\n      - id: listar\n        method: GET\n        path: /v1/cuentas\n      - id: detalle\n        method: POST\n        path: /v1/cuentas/{id}\n`,
+      ).diagram!,
+    );
+    const svg = await toSvg(compact);
+    expect(svg).toContain('GET /v1/cuentas');
+    expect(svg).not.toContain('/v1/cuentas/{id}');
+  });
+});
+
+describe('formas ArchiMate en draw.io', () => {
+  it('traduce cada tipo a su forma, siguiendo el ADR-003', async () => {
+    const xml = await toDrawio(ir, { archimate: true });
+    // gateway → ApplicationService (rounded); service → ApplicationComponent.
+    expect(xml).toContain('appType=serv;archiType=rounded;');
+    expect(xml).toContain('appType=comp;archiType=square;');
+  });
+
+  it('no las usa por omisión', async () => {
+    const xml = await toDrawio(ir);
+    expect(xml).not.toContain('mxgraph.archimate3');
   });
 });

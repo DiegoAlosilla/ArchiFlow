@@ -10,6 +10,7 @@ import { toDrawio } from '../export/drawio.js';
 import { toJson } from '../export/json.js';
 import { toMermaid } from '../export/mermaid.js';
 import { toSvg } from '../export/svg.js';
+import { toArchimate } from '../export/archimate.js';
 import { loadAllDiagrams } from './loader.js';
 import { serve } from './server.js';
 
@@ -63,16 +64,17 @@ cli
   });
 
 cli
-  .command('export <file>', 'Exporta un diagrama a draw.io, SVG, Mermaid o JSON')
-  .option('--to <format>', 'Formato: drawio | svg | mermaid | json', { default: 'drawio' })
+  .command('export <file>', 'Exporta un diagrama a draw.io, SVG, Mermaid, JSON o ArchiMate')
+  .option('--to <format>', 'Formato: drawio | svg | mermaid | json | archimate', { default: 'drawio' })
   .option('-o, --out <file>', 'Fichero de salida')
   .option('--flow <id>', 'Resalta un flujo concreto (svg)')
   .option('--light', 'Tema claro, para imprimir o pegar en un documento (svg)', { default: false })
   .option('--transparent', 'Fondo transparente (svg)', { default: false })
+  .option('--archimate', 'Usa formas ArchiMate al exportar draw.io', { default: false })
   .action(
     async (
       file: string,
-      options: { to: string; out?: string; flow?: string; light: boolean; transparent: boolean },
+      options: { to: string; out?: string; flow?: string; light: boolean; transparent: boolean; archimate: boolean },
     ) => {
       const input = path.resolve(process.cwd(), file);
       const source = await readFile(input, 'utf8');
@@ -102,7 +104,7 @@ cli
       switch (format) {
         case 'drawio':
         case 'xml':
-          content = await toDrawio(ir);
+          content = await toDrawio(ir, { archimate: options.archimate });
           extension = '.drawio';
           break;
         case 'svg':
@@ -122,9 +124,14 @@ cli
           content = toJson(ir);
           extension = '.json';
           break;
+        case 'archimate':
+        case 'archi':
+          content = await toArchimate(ir);
+          extension = '.xml';
+          break;
         default:
           console.log(
-            pc.red(`Formato desconocido: ${options.to}. Usa 'drawio', 'svg', 'mermaid' o 'json'.`),
+            pc.red(`Formato desconocido: ${options.to}. Usa 'drawio', 'svg', 'mermaid', 'json' o 'archimate'.`),
           );
           process.exitCode = 1;
           return;

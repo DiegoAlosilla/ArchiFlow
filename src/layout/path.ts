@@ -1,4 +1,5 @@
 import type { Side } from './anchors.js';
+import { routeAroundObstacles, type Obstacle } from './router.js';
 
 /**
  * Trazador ortogonal de aristas, con esquinas redondeadas.
@@ -110,8 +111,21 @@ export interface Route {
 /** Cuánto se aparta la etiqueta del trazo. */
 const LABEL_GAP = 13;
 
-export function routeEdge(from: Point, fromSide: Side, to: Point, toSide: Side): Route {
-  const points = simplify(waypoints(from, fromSide, to, toSide));
+export function routeEdge(
+  from: Point,
+  fromSide: Side,
+  to: Point,
+  toSide: Side,
+  obstacles: readonly Obstacle[] = [],
+): Route {
+  const fallback = waypoints(from, fromSide, to, toSide);
+  const start = stubPoint(from, fromSide, STUB);
+  const end = stubPoint(to, toSide, STUB);
+  // Sin obstáculos se conserva exactamente el trazado histórico (incluido el
+  // codo ortogonal entre los dos stubs). El router solo aporta valor cuando
+  // hay algo que esquivar.
+  const around = obstacles.length > 0 ? routeAroundObstacles(start, end, obstacles) : null;
+  const points = simplify(around ? [from, ...around, to] : fallback);
 
   if (points.length < 2) {
     return {

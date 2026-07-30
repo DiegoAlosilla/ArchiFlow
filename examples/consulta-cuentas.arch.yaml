@@ -44,6 +44,9 @@ nodes:
     kind: client
     zone: canales
     tech: iOS / Android
+    layout:
+      x: 75
+      y: 45
 
   - id: apigw
     label: API Gateway
@@ -61,11 +64,18 @@ nodes:
     zone: experiencia
     tech: Quarkus 3
     repo: git@banco:cuentas/bff-cuentas.git
+    # Expandido: las operaciones se dibujan como filas dentro de la caja, que es
+    # como el equipo dibuja un BFF en la pizarra.
+    expanded: true
     provides:
       - id: listar-cuentas
         method: GET
         path: /v1/cuentas
         description: Devuelve las cuentas del cliente autenticado con su saldo.
+      - id: detalle-cuenta
+        method: GET
+        path: /v1/cuentas/{id}
+        description: Detalle de una cuenta, con los últimos movimientos.
     layout:
       x: 40
       y: 40
@@ -142,11 +152,21 @@ flows:
         protocol: https
         latencyMs: 40
 
+      # `nodo/operacion` apunta a la operación concreta: la flecha sigue siendo
+      # entre servicios, pero el diagrama dice a qué endpoint se entra.
       - from: apigw
-        to: bff-cuentas
+        to: bff-cuentas/listar-cuentas
         op: GET /v1/cuentas
         protocol: http
         latencyMs: 8
+        request: |
+          { "clienteId": "0012345" }
+        response: |
+          {
+            "cuentas": [
+              { "numero": "194-3820014-2", "moneda": "PEN", "saldo": 1520.40 }
+            ]
+          }
 
       - from: bff-cuentas
         to: redis-cuentas

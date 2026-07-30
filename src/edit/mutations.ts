@@ -105,8 +105,11 @@ function cascadeNodeRename(doc: Document, oldId: string, newId: string): void {
     if (!isSeq(steps)) continue;
     for (const step of steps.items) {
       if (!isMap(step)) continue;
-      if (step.get('from') === oldId) step.set('from', newId);
-      if (step.get('to') === oldId) step.set('to', newId);
+      for (const key of ['from', 'to']) {
+        const value = step.get(key);
+        if (value === oldId) step.set(key, newId);
+        else if (typeof value === 'string' && value.startsWith(`${oldId}/`)) step.set(key, `${newId}/${value.slice(oldId.length + 1)}`);
+      }
     }
   }
 
@@ -150,7 +153,7 @@ function applyOne(doc: Document, mutation: Mutation): void {
         const steps = flow.get('steps', true);
         if (!isSeq(steps)) continue;
         steps.items = steps.items.filter(
-          (step) => !isMap(step) || (step.get('from') !== mutation.id && step.get('to') !== mutation.id),
+          (step) => !isMap(step) || (![step.get('from'), step.get('to')].some((value) => value === mutation.id || (typeof value === 'string' && value.startsWith(`${mutation.id}/`)))),
         );
       }
       const edges = sequence(doc, 'edges', false);

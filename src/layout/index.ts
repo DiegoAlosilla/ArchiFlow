@@ -14,10 +14,22 @@ import type { Ir, IrNode } from '../schema/compile.js';
 
 export * from './anchors.js';
 export * from './path.js';
+export * from './router.js';
 
 const elk = new ELK();
 
 export const NODE_HEIGHT = 76;
+/**
+ * Geometría de un nodo expandido, compartida por el canvas y los exportadores.
+ *
+ * `NODE_HEADER` es lo que ocupan el icono, el nombre y la tecnología; debajo va
+ * una fila por operación. Los mismos números están en `.node__endpoints` de
+ * `web/src/styles.css`: si se cambian aquí, hay que cambiarlos allí.
+ */
+export const NODE_HEADER = 58;
+export const ENDPOINT_ROW = 26;
+/** Aire bajo la última operación. */
+const ENDPOINT_PADDING = 10;
 const MIN_NODE_WIDTH = 180;
 const MAX_NODE_WIDTH = 300;
 /** Espacio reservado en la parte alta de una zona para su título. */
@@ -36,7 +48,13 @@ export function nodeWidth(node: IrNode): number {
 }
 
 export function nodeHeight(node: IrNode): number {
-  return node.layout?.height ?? NODE_HEIGHT;
+  if (node.layout?.height) return node.layout.height;
+  // Un servicio expandido dibuja sus operaciones dentro de la caja; el
+  // contenedor conserva una única topología pero reserva una fila para cada una.
+  if (node.expanded && node.provides.length > 0) {
+    return NODE_HEADER + node.provides.length * ENDPOINT_ROW + ENDPOINT_PADDING;
+  }
+  return NODE_HEIGHT;
 }
 
 export interface Box {

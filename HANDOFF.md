@@ -2,7 +2,7 @@
 
 Documento para quien continúe el desarrollo (Codex u otro agente). Las **decisiones de diseño ya están tomadas** en [`ADR-003`](docs/01_Arquitectura/ADR-003_Modelo_extendido_paginas_e_interoperabilidad.md): léelo antes de empezar y no reinventes el modelo.
 
-Última actualización: 2026-07-29 · rama `main` · commit `38cc67f`
+Última actualización: 2026-07-30 · rama `main` · P1 a P4 hechas, P5 a P8 pendientes
 
 ---
 
@@ -20,7 +20,7 @@ Comprobaciones que **deben pasar antes de cada commit**:
 npx tsc --noEmit && npx vitest run && npm run build
 ```
 
-59 tests en verde a día de hoy. Si tu cambio no rompe ninguno, probablemente no lo has cubierto: añade los tuyos.
+72 tests en verde a día de hoy. Si tu cambio no rompe ninguno, probablemente no lo has cubierto: añade los tuyos.
 
 ### Cómo está organizado
 
@@ -45,67 +45,54 @@ npx tsc --noEmit && npx vitest run && npm run build
 
 ---
 
+## Lo que ya está hecho (P1 a P4)
+
+No hace falta releer el código para saber por dónde va: esto es el resumen, y cada punto tiene tests.
+
+### P1 — Enrutado con esquiva de obstáculos ✔
+
+`src/layout/router.ts`: grafo de visibilidad ortogonal (guías a 16 unidades de cada caja, los cruces son los vértices) y A\* con penalización de 30 por giro. Cachea por firma de posiciones y **cae al trazador de siempre** si no encuentra camino en 4 000 nodos: mejor una flecha fea que una excepción.
+
+Los obstáculos son cajas de nodos, nunca de zonas. `routeEdge()` recibe la lista y sin obstáculos conserva el trazado histórico intacto. Lo llaman `web/src/edges.tsx` —con las posiciones vivas del arrastre— y `src/export/svg.ts`; los dos pasan el mismo conjunto, y eso hay que mantenerlo (invariante 4).
+
+### P2 — Deshacer, rehacer y Suprimir ✔
+
+Instantáneas en el servidor (D3 del ADR-003), anillo de 50 por fichero, en `src/cli/server.ts`. `POST /api/undo` y `/api/redo`; el estado viaja en `DiagramsPayload.history` para poder deshabilitar los botones. `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` y `Supr`, sin dispararse dentro de un campo del inspector. Los `confirm()` de borrado se han quitado: con deshacer eran ruido.
+
+### P3 — Endpoints dentro de la caja del servicio ✔
+
+`expanded: true` en el nodo dibuja sus `provides` como filas dentro de la caja, y un paso puede apuntar a la operación con `nodo/operacion`. **La arista sigue siendo entre nodos**: la operación solo afina etiqueta y anclaje (`fromOp` / `toOp` en el paso), así que un diagrama sin `expanded` sale exactamente igual que antes.
+
+Se resolvió sin meter los endpoints en ELK: el nodo crece (`NODE_HEADER` + una fila por operación) y las filas se dibujan dentro. Un nivel menos de anidamiento que lo que planteaba el ADR, mismo resultado en pantalla. Los tres sitios que las pintan —`web/src/nodes.tsx`, `src/export/svg.ts` y `src/export/drawio.ts`— comparten `NODE_HEADER` y `ENDPOINT_ROW` de `src/layout/index.ts`; el CSS los repite a mano y lo dice en un comentario.
+
+### P4 — Exportación a Archi y a draw.io con formas ArchiMate ✔
+
+`--to archimate` produce *Open Exchange File Format* con elementos, relaciones **y una vista con geometría**: sin la vista Archi importa el árbol del modelo pero no dibuja nada, y quien lo recibe tiene que recomponer el diagrama a mano.
+
+`--archimate` en la exportación a draw.io usa la librería `archimate3`, con la forma que toca para cada tipo según la tabla del ADR-003.
+
+**Cómo comprobar que el ArchiMate sigue siendo válido** si lo tocas — el XSD es implacable y Archi rechaza el fichero completo por un atributo:
+
+```powershell
+Invoke-WebRequest https://www.opengroup.org/xsd/archimate/3.1/archimate3_Diagram.xsd -OutFile archimate3_Diagram.xsd
+Invoke-WebRequest https://www.opengroup.org/xsd/archimate/3.1/archimate3_View.xsd  -OutFile archimate3_View.xsd
+Invoke-WebRequest https://www.opengroup.org/xsd/archimate/3.1/archimate3_Model.xsd -OutFile archimate3_Model.xsd
+```
+
+Y validar con `System.Xml.Schema.XmlSchemaSet` apuntando a `archimate3_Diagram.xsd` (namespace `.../3.0/`, que el 3.1 conserva). Los tests cubren lo que se puede sin descargar nada: tipos, orden de hijos, referencias resueltas y coordenadas no negativas.
+
+### P6 — Request y response de ejemplo ✔
+
+Campos `request` y `response` en el paso (D5), texto libre. Van en el inspector como `<textarea>` monoespaciado y en un panel plegable del lienzo al seleccionar el paso. El botón "Formatear JSON" reindenta si parsea y **no hace nada si no** — en diseño el ejemplo suele estar a medias y no se le puede exigir que compile.
+
+**Falta el importador**, que era la otra mitad de P4:
+
+- `archiflow import <fichero>`: mxGraph y ArchiMate → `.arch.yaml` borrador. Deduce el tipo por forma, color y texto. **Emite avisos de todo lo que hayas deducido**, no solo de lo que falle.
+- Si hay que recortar alcance, el importador de ArchiMate es lo primero que cae: exportar es lo que desbloquea la adopción.
+
+---
+
 ## Tareas pendientes, por prioridad
-
-### P1 — Las flechas siguen pasando por encima de los nodos
-
-**El problema.** `src/layout/path.ts` traza un recorrido ortogonal entre dos anclajes, pero **no conoce los demás nodos**: si hay una caja en medio, la atraviesa. El reparto de anclajes (`anchors.ts`) redujo mucho el apelotonamiento en los extremos, pero no resuelve esto.
-
-**Qué hacer.** Enrutado con esquiva de obstáculos. La vía recomendada:
-
-1. Construir un grafo de visibilidad ortogonal: por cada nodo, generar líneas guía horizontales y verticales a `margen` de sus bordes; los cruces son los vértices.
-2. A\* sobre ese grafo, con coste = longitud + penalización por giro (unas 30 unidades) para que salgan recorridos limpios.
-3. Los obstáculos son las cajas de nodos, **no** las de zonas: una arista debe poder cruzar una zona, no un servicio.
-4. Reserva: si A\* no encuentra camino en un presupuesto de nodos, cae al trazador actual. Mejor una flecha fea que una excepción.
-
-**Dónde.** `src/layout/router.ts` nuevo; `routeEdge()` pasa a aceptar la lista de obstáculos. Cuidado: lo llaman `web/src/edges.tsx` (con posiciones vivas durante el arrastre) y `src/export/svg.ts`. Cachea por firma de posiciones o el arrastre irá a tirones.
-
-**Hecho cuando.** Un test con un nodo justo entre origen y destino produce un recorrido cuyos segmentos no intersectan la caja del obstáculo.
-
----
-
-### P2 — Deshacer, rehacer y tecla Suprimir
-
-Ver **D3** del ADR-003: instantáneas en el servidor, no mutaciones inversas.
-
-- `src/cli/server.ts`: `Map<fileId, {stack: string[], index: number}>`, anillo de 50. Antes de cada escritura, apila el contenido previo.
-- Endpoints `POST /api/undo` y `POST /api/redo` con `{id}`; devuelven la nueva revisión y difunden como cualquier mutación.
-- `web/src/`: botones ↶ y ↷ en la barra superior, atajos `Ctrl+Z` / `Ctrl+Y` (y `Cmd` en Mac). Deshabilitados cuando no hay nada que deshacer — hace falta exponer el estado del historial en `DiagramsPayload`.
-- `Supr` / `Delete` sobre la selección borra el nodo, la zona o el paso. Con deshacer disponible, **quita el `confirm()`** de `web/src/Inspector.tsx`: dejarlo sería redundante y molesto.
-
-**Ojo.** El atajo no debe dispararse escribiendo en un campo del inspector. `web/src/Timeline.tsx` ya tiene el patrón de comprobar `event.target.tagName`.
-
----
-
-### P3 — Un microservicio es una caja y sus endpoints son nodos
-
-Ver **D1** del ADR-003. Es el cambio de modelo más grande; hazlo después de P1 y P2.
-
-Orden sugerido:
-
-1. `src/schema/schema.ts`: añadir `expanded: z.boolean().default(false)` al nodo.
-2. `src/schema/parse.ts`: aceptar `nodo/operacion` en `from`/`to`, validando que la operación exista en `provides` de ese nodo.
-3. `src/schema/compile.ts`: **la arista sigue siendo entre nodos.** Guarda la operación en el paso (`fromOp`, `toOp`) para la etiqueta y el anclaje.
-4. `src/layout/index.ts`: si `expanded`, los `provides` entran en ELK como hijos del nodo, con el nodo actuando de contenedor.
-5. `web/src/nodes.tsx`: tipo de nodo `endpoint`, compacto (método + ruta).
-6. `src/export/svg.ts` y `drawio.ts`: dibujar los hijos.
-7. `src/analyzer/`: poner `expanded: true` cuando el servicio tenga dos o más endpoints — es donde más se nota.
-
-**Compatibilidad.** Un diagrama sin `expanded` debe salir exactamente igual que hoy. Hay ejemplos y tests que lo comprueban; que sigan verdes es la señal.
-
----
-
-### P4 — Interoperabilidad con Archi y draw.io
-
-Ver **D4** del ADR-003, que ya fija la tabla de correspondencia de tipos. **No la cambies sin actualizar el ADR.**
-
-- **Exportar ArchiMate** (`--to archimate`): *Open Exchange File Format* de The Open Group. Archi lo importa nativamente. Empieza por aquí: es lo que desbloquea la adopción.
-- **Exportar draw.io con formas ArchiMate**: opción `--archimate`, usando la librería `archimate3` de draw.io (`shape=mxgraph.archimate3.application;archiType=rounded;...`).
-- **Importar** (`archiflow import <fichero>`): mxGraph y ArchiMate → `.arch.yaml` borrador. Deduce el tipo por forma, color y texto. **Emite avisos de todo lo que hayas deducido**, no solo de lo que falle.
-
-Si hay que recortar alcance, el importador de ArchiMate es lo primero que cae.
-
----
 
 ### P5 — Páginas
 
@@ -114,15 +101,6 @@ Ver **D2**: una página es un fichero. Falta poco:
 - Botón "+ Página" que cree `<nombre>.arch.yaml` en la carpeta vigilada, con un esqueleto mínimo.
 - Renombrar y duplicar desde la barra lateral (mutaciones nuevas a nivel de fichero, no de documento: van en el servidor, no en `mutations.ts`).
 - El export a draw.io ya genera varias páginas; que incluya todos los ficheros de la carpeta cuando se exporte "todo".
-
----
-
-### P6 — Request y response de ejemplo
-
-Ver **D5**. Campos `request` y `response` en el paso, texto libre.
-
-- Esquema, inspector con `<textarea>` monoespaciado, y un panel plegable en el lienzo al seleccionar el paso.
-- Un botón "formatear JSON" que aplique `JSON.stringify(JSON.parse(x), null, 2)` **y no haga nada si no parsea**. En diseño el ejemplo suele estar a medias y no se le puede exigir que sea válido.
 
 ---
 
@@ -169,7 +147,12 @@ Para que no se repitan:
 - **Nodos de React Flow sin `width`/`height` explícitos**: nacen con `visibility: hidden` esperando al `ResizeObserver`, y hasta que no se miden **no se dibuja ninguna arista**. ELK ya nos da las dimensiones; pásalas.
 - **Etiquetas HTML sin escapar en atributos de mxGraph**: draw.io rechaza el fichero entero con *"Unescaped '<' not allowed in attributes values"*. Va escapado; `html=1` hace que mxGraph lo interprete al pintar.
 - **Difundir por WebSocket en cada escritura**: provoca un recálculo de layout y un salto visual justo mientras arrastras. El servidor deduplica comparando revisiones.
+- **`xsi:type="ServingRelationship"` en el ArchiMate exportado**: ese es el formato **nativo** de Archi. El de intercambio quiere `Serving`, y con el sufijo el XSD tumba el fichero entero.
+- **Volcar las coordenadas del lienzo tal cual en la vista de ArchiMate**: son `nonNegativeInteger`, y arrastrar una zona hacia arriba deja posiciones negativas legítimas aquí que allí invalidan el fichero. Se traslada el nivel superior; recortar caja a caja perdería la posición relativa entre zonas.
+- **Ids de ArchiFlow como `identifier` de ArchiMate**: es un `xsd:ID`, así que no admite dígito inicial ni `/`, y los ids de arista son `origen__destino`. Van con prefijo y saneados.
 
 ## Limitación del entorno de verificación
 
 La animación y el arrastre **no se han podido verificar visualmente**: el panel de navegador del entorno de desarrollo no compone fotogramas, y ni `requestAnimationFrame` ni `ResizeObserver` se disparan ahí. Todo lo visual está verificado por datos, por tests y por inspección del DOM, pero **alguien tiene que mirarlo con ojos**. Si trabajas con un navegador real, empieza por ahí.
+
+Lo mismo aplica a la interoperabilidad: el ArchiMate exportado **valida contra el XSD oficial**, y el draw.io con formas ArchiMate usa los estilos de la librería real, pero **nadie los ha abierto todavía en Archi ni en draw.io**. Es lo primero que conviene probar antes de enseñárselo al banco.

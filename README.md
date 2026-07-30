@@ -112,7 +112,7 @@ da a la vez la arista, el nombre del destino y hasta la zona.
 | `archiflow serve [dir]` | Web local con recarga en caliente sobre los `.arch.yaml` |
 | `archiflow validate [dir]` | Valida contra el esquema, con línea y columna en cada error |
 | `archiflow scan [repo]` | Recolecta evidencias de un microservicio Quarkus/Spring |
-| `archiflow export <file> --to drawio\|svg\|mermaid\|json` | Exporta |
+| `archiflow export <file> --to drawio\|svg\|mermaid\|json\|archimate` | Exporta |
 
 ## Exportar
 
@@ -125,6 +125,9 @@ La web animada es el entregable. Los exports existen para compartir con quien no
 | **PNG / JPG** | Rasterizados del SVG a 1×, 2× o 3×, con tema claro u oscuro y fondo opcionalmente transparente. |
 | **Mermaid** (`.md`) | Topología como `flowchart` y cada flujo como `sequenceDiagram`. Para pegar en un PR — GitHub lo renderiza — y porque un LLM lo entiende sin contexto. |
 | **JSON** | El modelo compilado, con las aristas ya inferidas y la línea de tiempo calculada, para alimentar otra herramienta. |
+| **ArchiMate** (`.xml`) | *Open Exchange File Format* de The Open Group, que Archi importa nativamente. Lleva los elementos, las relaciones y una vista con la geometría, para que al abrirlo haya un diagrama y no solo un árbol de modelo. |
+
+El export a draw.io acepta además `--archimate`, que dibuja cada tipo con la forma ArchiMate que le corresponde en vez de con rectángulos.
 
 Todos los formatos de imagen salen del **mismo layout y el mismo trazador de aristas que usa la web**, así que el fichero exportado es el diagrama que estabas viendo, no una reconstrucción parecida. Y todo se genera en tu máquina: nada sale de ella.
 
@@ -149,10 +152,10 @@ Del inspector aún faltan `provides`, `topics` y `tags`: esos campos hay que toc
 
 **Limitaciones conocidas hoy:**
 
-- Las flechas esquivan bien los extremos pero **todavía pueden cruzar por encima de un nodo intermedio**: el trazador aún no conoce los obstáculos.
-- No hay deshacer ni tecla Suprimir.
-- Los endpoints se listan en `provides` pero no se dibujan como nodos dentro del servicio.
-- No hay importador; ni de draw.io ni de ArchiMate.
+- No hay importador; ni de draw.io ni de ArchiMate. La exportación a ArchiMate valida contra el XSD oficial, pero **nadie la ha abierto todavía en Archi**.
+- El historial de deshacer vive en la sesión del servidor: se pierde al reiniciarlo, y solo cubre las escrituras hechas desde la web. El respaldo real sigue siendo git.
+- Las páginas son ficheros de la carpeta: no se pueden crear ni renombrar desde la web.
+- La animación es un paso a la vez, con un paquete por arista: falta el modo de flujo continuo y los ajustes de velocidad y dirección.
 
 **Siguientes pasos**, priorizados y con las decisiones de diseño ya tomadas: [HANDOFF.md](HANDOFF.md) y [ADR-003](docs/01_Arquitectura/ADR-003_Modelo_extendido_paginas_e_interoperabilidad.md). Más allá de eso: `archiflow diff` (contrastar el diagrama contra el código en CI) y la generación del esqueleto OpenAPI, que cierra el ciclo contract-first.
 

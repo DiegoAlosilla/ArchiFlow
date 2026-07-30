@@ -60,6 +60,10 @@ Salida:
 | `messaging` con broker | Un nodo `kind: broker` (uno solo para todo Kafka, no uno por topic) |
 | `endpoints` | No son nodos: van en `provides` del propio servicio |
 
+Si un servicio expone **dos o más endpoints**, añádele `expanded: true`: sus operaciones se dibujan como filas dentro de la caja en vez de quedarse en un subtítulo, que es donde más se nota la diferencia entre el diagrama y el código. Con un solo endpoint no hace falta: ya sale como subtítulo.
+
+Y cuando un paso vaya contra una operación concreta, apunta a ella con `nodo/operacion` (`to: bff-cuentas/listar-cuentas`); requiere que esa operación tenga `id` en `provides`.
+
 Para las zonas, deduce del host: `ms-customer.negocio.svc.cluster.local` dice que vive en `negocio`. Si no hay pistas, usa el layering habitual (`canales` / `experiencia` / `negocio` / `datos`) y dilo explícitamente para que el usuario lo corrija.
 
 ### 5. Construir los flujos
