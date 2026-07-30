@@ -3,6 +3,7 @@ import { compile } from '../src/schema/compile.js';
 import { parseDiagram } from '../src/schema/parse.js';
 import { toDrawio } from '../src/export/drawio.js';
 import { toSvg } from '../src/export/svg.js';
+import { toArchimate } from '../src/export/archimate.js';
 
 /**
  * Un fichero exportado que la herramienta destino rechaza es peor que no
@@ -98,5 +99,14 @@ describe('toSvg', () => {
   it('numera los pasos cuando se resalta un flujo', async () => {
     const svg = await toSvg(ir, { flowId: 'f' });
     expect(svg).toContain('1. GET /v1/cuentas');
+  });
+});
+
+describe('toArchimate', () => {
+  it('exporta los elementos y relaciones del IR', () => {
+    const xml = toArchimate(ir);
+    expect(xml).toContain('ApplicationService');
+    expect(xml).toContain('ServingRelationship');
+    expect(xml).toContain('API &lt;Gateway&gt;');
   });
 });

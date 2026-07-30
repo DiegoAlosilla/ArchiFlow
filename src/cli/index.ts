@@ -10,6 +10,7 @@ import { toDrawio } from '../export/drawio.js';
 import { toJson } from '../export/json.js';
 import { toMermaid } from '../export/mermaid.js';
 import { toSvg } from '../export/svg.js';
+import { toArchimate } from '../export/archimate.js';
 import { loadAllDiagrams } from './loader.js';
 import { serve } from './server.js';
 
@@ -63,8 +64,8 @@ cli
   });
 
 cli
-  .command('export <file>', 'Exporta un diagrama a draw.io, SVG, Mermaid o JSON')
-  .option('--to <format>', 'Formato: drawio | svg | mermaid | json', { default: 'drawio' })
+  .command('export <file>', 'Exporta un diagrama a draw.io, SVG, Mermaid, JSON o ArchiMate')
+  .option('--to <format>', 'Formato: drawio | svg | mermaid | json | archimate', { default: 'drawio' })
   .option('-o, --out <file>', 'Fichero de salida')
   .option('--flow <id>', 'Resalta un flujo concreto (svg)')
   .option('--light', 'Tema claro, para imprimir o pegar en un documento (svg)', { default: false })
@@ -122,9 +123,14 @@ cli
           content = toJson(ir);
           extension = '.json';
           break;
+        case 'archimate':
+        case 'archi':
+          content = toArchimate(ir);
+          extension = '.xml';
+          break;
         default:
           console.log(
-            pc.red(`Formato desconocido: ${options.to}. Usa 'drawio', 'svg', 'mermaid' o 'json'.`),
+            pc.red(`Formato desconocido: ${options.to}. Usa 'drawio', 'svg', 'mermaid', 'json' o 'archimate'.`),
           );
           process.exitCode = 1;
           return;
