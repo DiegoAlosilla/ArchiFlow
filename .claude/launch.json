@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "archiflow-serve",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["dist/cli/index.js", "serve", "./examples", "--port", "4130"],
+      "port": 4130,
+      "autoPort": false
+    }
+  ]
+}

@@ -41,6 +41,7 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
 
   const subtitle = node.tech ?? style.label;
   const endpoint = node.provides[0];
+  const expanded = node.expanded && node.provides.length > 0;
 
   return (
     <>
@@ -56,7 +57,7 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
       )}
 
       <div
-        className={`node node--${node.kind}${node.external ? ' node--external' : ''}`}
+        className={`node node--${node.kind}${node.external ? ' node--external' : ''}${expanded ? ' node--expanded' : ''}`}
         style={{ '--accent': style.accent } as React.CSSProperties}
         data-node-id={id}
         title={node.description ?? undefined}
@@ -77,7 +78,8 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
           <span className="node__label">{node.label}</span>
           <span className="node__subtitle">
             {subtitle}
-            {endpoint?.path && (
+            {/* Expandido, la primera operación ya tiene su fila abajo. */}
+            {!expanded && endpoint?.path && (
               <>
                 {' · '}
                 <code>
@@ -87,7 +89,7 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
             )}
           </span>
         </span>
-        {node.expanded && node.provides.length > 0 && (
+        {expanded && (
           <div className="node__endpoints">
             {node.provides.map((operation, index) => (
               <span

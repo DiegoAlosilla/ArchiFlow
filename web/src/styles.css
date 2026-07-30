@@ -129,10 +129,16 @@ button {
   white-space: nowrap;
 }
 
+/* Reserva sitio para la etiqueta más larga. Sin esto, pasar de "En vivo" a
+   "Guardando…" en cada escritura corre la barra de herramientas hacia la
+   izquierda, y los botones se mueven bajo el cursor justo después de pulsar
+   uno: con "+ Zona" al lado de deshacer, el fallo cuesta una zona nueva. */
 .topbar__status {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 7px;
+  min-width: 108px;
   font-size: 12px;
   color: var(--text-muted);
   flex-shrink: 0;
@@ -499,6 +505,11 @@ button {
 /* ── Nodos ──────────────────────────────────────────────────── */
 
 .node {
+  /* Banda que ocupan el icono y el nombre. Es `NODE_HEADER` de
+     `src/layout/index.ts`, que es lo que el layout reserva antes de las filas
+     de operaciones y lo que dibuja el exportador a SVG. */
+  --node-header: 58px;
+
   display: flex;
   align-items: center;
   gap: 11px;
@@ -514,6 +525,22 @@ button {
 
 .node--external {
   border-style: dashed;
+}
+
+/* Con las operaciones dentro, la cabecera se queda en su banda en vez de
+   centrarse en la caja entera: centrada, el nombre se monta sobre la primera
+   fila en cuanto el nodo crece. */
+.node--expanded {
+  align-items: flex-start;
+}
+
+.node--expanded .node__icon {
+  margin-top: calc((var(--node-header) - 34px) / 2);
+}
+
+.node--expanded .node__text {
+  height: var(--node-header);
+  justify-content: center;
 }
 
 .node__icon {
@@ -1247,10 +1274,12 @@ button {
 
 /* ── Panel de contrato del paso seleccionado ────────────────── */
 
+/* Apilado sobre el minimapa —150 px de alto más su margen— en vez de encima:
+   en la esquina lo tapaba, y arriba tapaba el diagrama que se está mirando. */
 .contract-panel {
   position: absolute;
   right: 18px;
-  bottom: 18px;
+  bottom: 182px;
   z-index: 10;
   width: min(360px, 42%);
   padding: 10px;
@@ -1277,14 +1306,14 @@ button {
 
 /* ── Operaciones dentro de un nodo expandido ────────────────── */
 
-/* `top` y la altura de fila salen de NODE_HEADER y ENDPOINT_ROW en
-   `src/layout/index.ts`, que es lo que el layout reserva y lo que dibuja el
-   exportador a SVG. Los tres números van juntos. */
+/* La altura de fila más el hueco son `ENDPOINT_ROW` de `src/layout/index.ts`,
+   que es lo que el layout reserva por operación y lo que dibuja el exportador
+   a SVG. Los tres van juntos. */
 .node__endpoints {
   position: absolute;
   left: 14px;
   right: 14px;
-  top: 58px;
+  top: var(--node-header);
   display: grid;
   gap: 4px;
 }
