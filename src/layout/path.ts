@@ -1,0 +1,149 @@
+import type { Side } from './anchors.js';
+
+/**
+ * Trazador ortogonal de aristas, con esquinas redondeadas.
+ *
+ * Existe en vez de usar el `getSmoothStepPath` de React Flow porque el
+ * exportador a SVG corre en Node, donde React Flow no está. Compartir un único
+ * trazador garantiza que el fichero exportado sea idéntico a lo que se ve en
+ * pantalla: si cada uno enrutara a su manera, el PNG que alguien pega en una
+ * presentación no sería el diagrama que revisó.
+ */
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/** Longitud del tramo recto que sale perpendicular al nodo antes de girar. */
+const STUB = 18;
+const RADIUS = 12;
+
+const isVertical = (side: Side) => side === 'top' || side === 'bottom';
+
+function stubPoint(point: Point, side: Side, distance: number): Point {
+  switch (side) {
+    case 'top':
+      return { x: point.x, y: point.y - distance };
+    case 'bottom':
+      return { x: point.x, y: point.y + distance };
+    case 'left':
+      return { x: point.x - distance, y: point.y };
+    case 'right':
+      return { x: point.x + distance, y: point.y };
+  }
+}
+
+/** Puntos de quiebro entre los dos tramos perpendiculares a cada nodo. */
+function waypoints(from: Point, fromSide: Side, to: Point, toSide: Side): Point[] {
+  const a = stubPoint(from, fromSide, STUB);
+  const b = stubPoint(to, toSide, STUB);
+
+  const verticalStart = isVertical(fromSide);
+  const verticalEnd = isVertical(toSide);
+
+  if (verticalStart && verticalEnd) {
+    const midY = (a.y + b.y) / 2;
+    return [from, a, { x: a.x, y: midY }, { x: b.x, y: midY }, b, to];
+  }
+
+  if (!verticalStart && !verticalEnd) {
+    const midX = (a.x + b.x) / 2;
+    return [from, a, { x: midX, y: a.y }, { x: midX, y: b.y }, b, to];
+  }
+
+  // Codo simple: se gira una sola vez, en la esquina que respeta la dirección
+  // de salida de cada extremo.
+  const corner = verticalStart ? { x: a.x, y: b.y } : { x: b.x, y: a.y };
+  return [from, a, corner, b, to];
+}
+
+/** Elimina puntos repetidos y colineales, que producirían curvas de radio cero. */
+function simplify(points: Point[]): Point[] {
+  const result: Point[] = [];
+  for (const point of points) {
+    const last = result[result.length - 1];
+    if (last && Math.abs(last.x - point.x) < 0.5 && Math.abs(last.y - point.y) < 0.5) continue;
+    result.push(point);
+  }
+
+  for (let i = result.length - 2; i > 0; i--) {
+    const before = result[i - 1]!;
+    const current = result[i]!;
+    const after = result[i + 1]!;
+    const collinear =
+      (Math.abs(before.x - current.x) < 0.5 && Math.abs(current.x - after.x) < 0.5) ||
+      (Math.abs(before.y - current.y) < 0.5 && Math.abs(current.y - after.y) < 0.5);
+    if (collinear) result.splice(i, 1);
+  }
+
+  return result;
+}
+
+const distance = (a: Point, b: Point) => Math.hypot(b.x - a.x, b.y - a.y);
+
+/** Punto a `t` del recorrido entre `a` y `b`, acotado a `max` unidades. */
+function towards(a: Point, b: Point, max: number): Point {
+  const length = distance(a, b);
+  if (length === 0) return { ...a };
+  const ratio = Math.min(max, length / 2) / length;
+  return { x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio };
+}
+
+export interface Route {
+  /** Atributo `d` de un `<path>`. */
+  d: string;
+  /** Vértices sin redondear, útiles para colocar la etiqueta. */
+  points: Point[];
+  /** Punto medio por longitud de arco. */
+  labelAt: Point;
+}
+
+export function routeEdge(from: Point, fromSide: Side, to: Point, toSide: Side): Route {
+  const points = simplify(waypoints(from, fromSide, to, toSide));
+
+  if (points.length < 2) {
+    return { d: `M ${from.x},${from.y} L ${to.x},${to.y}`, points: [from, to], labelAt: from };
+  }
+
+  const first = points[0]!;
+  let d = `M ${first.x.toFixed(1)},${first.y.toFixed(1)}`;
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const previous = points[i - 1]!;
+    const corner = points[i]!;
+    const next = points[i + 1]!;
+
+    const entry = towards(corner, previous, RADIUS);
+    const exit = towards(corner, next, RADIUS);
+
+    d += ` L ${entry.x.toFixed(1)},${entry.y.toFixed(1)}`;
+    d += ` Q ${corner.x.toFixed(1)},${corner.y.toFixed(1)} ${exit.x.toFixed(1)},${exit.y.toFixed(1)}`;
+  }
+
+  const last = points[points.length - 1]!;
+  d += ` L ${last.x.toFixed(1)},${last.y.toFixed(1)}`;
+
+  return { d, points, labelAt: midpoint(points) };
+}
+
+function midpoint(points: Point[]): Point {
+  const total = points.reduce(
+    (sum, point, i) => (i === 0 ? 0 : sum + distance(points[i - 1]!, point)),
+    0,
+  );
+
+  let travelled = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    const segment = distance(a, b);
+    if (travelled + segment >= total / 2) {
+      const ratio = segment === 0 ? 0 : (total / 2 - travelled) / segment;
+      return { x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio };
+    }
+    travelled += segment;
+  }
+
+  return points[points.length - 1]!;
+}

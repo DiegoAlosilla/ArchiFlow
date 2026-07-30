@@ -1,6 +1,7 @@
 import type { Edge, Node } from '@xyflow/react';
-import type { LaidOutGraph } from '@archiflow/layout';
+import type { Box, LaidOutGraph } from '@archiflow/layout';
 import type { Ir, IrEdge, IrNode, IrZone } from '@archiflow/schema';
+import { computeSlots, type EdgeSlot } from '@archiflow/layout';
 
 /**
  * Traducción del layout de ELK a nodos y aristas de React Flow.
@@ -9,16 +10,45 @@ import type { Ir, IrEdge, IrNode, IrZone } from '@archiflow/schema';
  * para que el `.drawio` salga con la misma disposición que se ve en pantalla.
  */
 
+/** Tamaño resultante de arrastrar una asa de redimensionado. */
+export interface ResizeBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface ZoneNodeData extends Record<string, unknown> {
   zone: IrZone;
+  editing?: boolean;
+  onResizeEnd?: (id: string, box: ResizeBox) => void;
 }
 
 export interface ServiceNodeData extends Record<string, unknown> {
   node: IrNode;
+  editing?: boolean;
+  onResizeEnd?: (id: string, box: ResizeBox) => void;
 }
 
 export interface EdgeData extends Record<string, unknown> {
   edge: IrEdge;
+  /** Lado y hueco asignados a cada extremo, para que las aristas no se pisen. */
+  slot: EdgeSlot;
+}
+
+/**
+ * Posiciones absolutas de todos los nodos. ELK da las de los hijos relativas a
+ * su zona, pero el reparto de anclajes compara nodos de zonas distintas.
+ */
+export function absoluteBoxes(laid: LaidOutGraph): Map<string, Box> {
+  const boxes = new Map<string, Box>();
+  for (const zone of laid.zones) {
+    for (const child of zone.children) {
+      boxes.set(child.id, { ...child, x: zone.x + child.x, y: zone.y + child.y });
+    }
+  }
+  for (const box of laid.loose) boxes.set(box.id, box);
+  return boxes;
 }
 
 export interface LayoutResult {
@@ -86,14 +116,23 @@ export function toReactFlow(laid: LaidOutGraph, ir: Ir): LayoutResult {
     });
   }
 
-  const edges: Edge<EdgeData>[] = ir.edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    type: 'archiflow',
-    data: { edge } satisfies EdgeData,
-    zIndex: 2,
-  }));
+  const slots = computeSlots(absoluteBoxes(laid), ir.edges);
+
+  const edges: Edge<EdgeData>[] = [];
+  for (const edge of ir.edges) {
+    // Sin hueco asignado el nodo no está en el layout: dibujar la arista
+    // produciría una flecha colgando de la nada.
+    const slot = slots.get(edge.id);
+    if (!slot) continue;
+    edges.push({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      type: 'archiflow',
+      data: { edge, slot } satisfies EdgeData,
+      zIndex: 2,
+    });
+  }
 
   return { nodes, edges };
 }

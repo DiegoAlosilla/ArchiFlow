@@ -6,6 +6,7 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  ConnectionMode,
   applyNodeChanges,
   useReactFlow,
   type Connection,
@@ -69,6 +70,25 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
    * sino apagar las que no participan en el flujo que se está viendo. Durante
    * la edición se atenúa menos, porque hay que poder alcanzar todo.
    */
+  /** Guarda el tamaño tras soltar una asa de redimensionado. */
+  const onResizeEnd = useCallback(
+    (id: string, box: { x: number; y: number; width: number; height: number }) => {
+      const isZone = id.startsWith('zone:');
+      const layout = {
+        x: Math.round(box.x),
+        y: Math.round(box.y),
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+      };
+      void mutate(
+        isZone
+          ? { op: 'zone.update', id: id.slice('zone:'.length), patch: { layout } }
+          : { op: 'node.update', id, patch: { layout } },
+      );
+    },
+    [mutate],
+  );
+
   const decorate = useCallback(
     (list: Node[]): Node[] => {
       const active = flow ? new Set(flow.nodeIds) : null;
@@ -77,22 +97,24 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         if (node.type !== 'zone' && active && !active.has(node.id) && !editing) {
           classes.push('is-out-of-flow');
         }
-        if (
+        const isSelected =
           (selection?.kind === 'node' && selection.id === node.id) ||
-          (selection?.kind === 'zone' && `zone:${selection.id}` === node.id)
-        ) {
-          classes.push('is-selected');
-        }
+          (selection?.kind === 'zone' && `zone:${selection.id}` === node.id);
+        if (isSelected) classes.push('is-selected');
+
         return {
           ...node,
+          data: { ...node.data, editing, onResizeEnd },
           className: classes.join(' ') || undefined,
+          // El resizer solo aparece en el nodo seleccionado de React Flow, así
+          // que la selección del inspector tiene que reflejarse aquí también.
+          selected: isSelected,
           draggable: editing && node.type !== 'zone',
-          connectable: editing && node.type !== 'zone',
           selectable: editing,
         };
       });
     },
-    [flow, editing, selection],
+    [flow, editing, selection, onResizeEnd],
   );
 
   useEffect(() => {
@@ -186,6 +208,9 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         nodesConnectable={editing}
         elementsSelectable={editing}
         edgesFocusable={false}
+        // En modo suelto cualquier conector sirve de origen y de destino, que
+        // es lo que permite tener uno por lado sin duplicarlos.
+        connectionMode={ConnectionMode.Loose}
         proOptions={{ hideAttribution: true }}
         minZoom={0.15}
         maxZoom={2.5}

@@ -12,6 +12,9 @@ import type { Ir, IrNode } from '../schema/compile.js';
  * cuidado que esté el estilo de las cajas.
  */
 
+export * from './anchors.js';
+export * from './path.js';
+
 const elk = new ELK();
 
 export const NODE_HEIGHT = 76;
@@ -21,10 +24,19 @@ const MAX_NODE_WIDTH = 300;
 const ZONE_HEADER = 44;
 /** Margen interior de una zona respecto a sus hijos. */
 const ZONE_PADDING = 22;
+/** Tamaño mínimo de una zona, para que una recién creada sea usable. */
+const MIN_ZONE_WIDTH = 260;
+const MIN_ZONE_HEIGHT = 140;
 
+/** Un tamaño fijado a mano manda; si no, se estima a partir del texto. */
 export function nodeWidth(node: IrNode): number {
+  if (node.layout?.width) return node.layout.width;
   const longest = Math.max(node.label.length, (node.tech ?? '').length + 2);
   return Math.min(MAX_NODE_WIDTH, Math.max(MIN_NODE_WIDTH, Math.round(longest * 8.5 + 52)));
+}
+
+export function nodeHeight(node: IrNode): number {
+  return node.layout?.height ?? NODE_HEIGHT;
 }
 
 export interface Box {
@@ -72,7 +84,7 @@ export async function computeBaseLayout(ir: Ir): Promise<LaidOutGraph> {
   const toElkNode = (node: IrNode): ElkNode => ({
     id: node.id,
     width: nodeWidth(node),
-    height: NODE_HEIGHT,
+    height: nodeHeight(node),
   });
 
   const zoneChildren: ElkNode[] = ir.zones.map((zone) => ({
@@ -95,11 +107,21 @@ export async function computeBaseLayout(ir: Ir): Promise<LaidOutGraph> {
       'elk.algorithm': 'layered',
       'elk.direction': 'DOWN',
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '76',
-      'elk.spacing.nodeNode': '44',
-      'elk.spacing.edgeNode': '28',
+      // Separación generosa: el espacio entre capas es lo que da sitio a las
+      // aristas para no montarse unas sobre otras al cambiar de nivel.
+      'elk.layered.spacing.nodeNodeBetweenLayers': '110',
+      'elk.layered.spacing.edgeNodeBetweenLayers': '36',
+      'elk.layered.spacing.edgeEdgeBetweenLayers': '20',
+      'elk.spacing.nodeNode': '56',
+      'elk.spacing.edgeNode': '32',
+      'elk.spacing.edgeEdge': '18',
       'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+      // Minimizar cruces importa más que la rapidez: un diagrama se calcula
+      // una vez y se mira muchas.
+      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+      'elk.layered.crossingMinimization.semiInteractive': 'true',
+      'elk.layered.thoroughness': '20',
       'elk.edgeRouting': 'ORTHOGONAL',
     },
     children: [...zoneChildren, ...looseNodes.map(toElkNode)],
@@ -151,7 +173,14 @@ export function applyLayoutOverrides(base: LaidOutGraph, ir: Ir): LaidOutGraph {
 
   const withOverride = (box: Box): Box => {
     const override = nodeById.get(box.id)?.layout;
-    return override ? { ...box, x: override.x, y: override.y } : box;
+    if (!override) return box;
+    return {
+      ...box,
+      x: override.x,
+      y: override.y,
+      width: override.width ?? box.width,
+      height: override.height ?? box.height,
+    };
   };
 
   const zones = base.zones.map((zoneBox) => {
@@ -187,14 +216,18 @@ export async function computeLayout(ir: Ir): Promise<LaidOutGraph> {
  * nodo quedaría dibujado fuera de su propio contenedor.
  */
 function growToFit(zone: Box, children: Box[]): Box {
-  if (children.length === 0) return zone;
-
-  const right = Math.max(...children.map((child) => child.x + child.width));
-  const bottom = Math.max(...children.map((child) => child.y + child.height));
+  // Una zona recién creada aún no tiene nodos, y ELK le asigna tamaño cero.
+  // Sin un mínimo se dibujaría como un rectángulo degenerado, imposible de
+  // seleccionar y de arrastrarle nodos dentro.
+  const right = Math.max(MIN_ZONE_WIDTH, ...children.map((child) => child.x + child.width + ZONE_PADDING));
+  const bottom = Math.max(
+    MIN_ZONE_HEIGHT,
+    ...children.map((child) => child.y + child.height + ZONE_PADDING),
+  );
 
   return {
     ...zone,
-    width: Math.max(zone.width, right + ZONE_PADDING),
-    height: Math.max(zone.height, bottom + ZONE_PADDING),
+    width: Math.max(zone.width, right),
+    height: Math.max(zone.height, bottom),
   };
 }
