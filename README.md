@@ -25,7 +25,7 @@ Abre `http://localhost:4123`. Edita el `.arch.yaml` y el navegador se actualiza 
 
 ## Editar desde la web
 
-La web tiene dos modos. En **Ver** el diagrama se reproduce; en **Editar** puedes:
+El lienzo siempre es editable: al seleccionar un objeto aparece el inspector. Puedes:
 
 - Arrastrar nodos y que la posición quede fijada en el YAML.
 - **Redimensionar** nodos y zonas con las asas del elemento seleccionado.
@@ -38,7 +38,7 @@ Lo importante de cómo está hecho: la web **no reescribe el fichero entero**. E
 
 Puedes tener el fichero abierto a la vez en la web y en tu editor de texto: cada escritura comprueba una huella del contenido y, si cambió por otra vía, la web avisa en vez de pisarlo.
 
-No hay deshacer: cada edición se guarda al momento. El respaldo es git, que es coherente con tratar el diagrama como código.
+**Aún no hay deshacer** — está diseñado y pendiente de implementar (ver [HANDOFF.md](HANDOFF.md), P2). Hasta entonces el respaldo es git, que es coherente con tratar el diagrama como código.
 
 ## Cómo es un diagrama
 
@@ -147,13 +147,14 @@ Versión temprana. Funciona el ciclo completo (esquema → validación → rende
 
 Del inspector aún faltan `provides`, `topics` y `tags`: esos campos hay que tocarlos en el YAML.
 
-**Fuera de alcance por ahora**, para evitar deriva: importar desde draw.io, colaboración multiusuario y generación de código del microservicio.
+**Limitaciones conocidas hoy:**
 
-**Siguientes pasos previstos:**
+- Las flechas esquivan bien los extremos pero **todavía pueden cruzar por encima de un nodo intermedio**: el trazador aún no conoce los obstáculos.
+- No hay deshacer ni tecla Suprimir.
+- Los endpoints se listan en `provides` pero no se dibujan como nodos dentro del servicio.
+- No hay importador; ni de draw.io ni de ArchiMate.
 
-- **GIF animado y PDF.** El GIF es lo que permitiría pegar el recorrido en un Confluence o un Teams, que es donde acaba viviendo la documentación. Requiere cuantización de color propia: el tema oscuro con degradados sufre mucho en los 256 colores de GIF, y hacerlo mal se ve peor que no hacerlo.
-- **`archiflow diff`**: comparar el diagrama commiteado contra el código, para poder fallar un build cuando el diagrama miente.
-- **Esqueleto OpenAPI desde el diagrama**, que cierra el ciclo contract-first.
+**Siguientes pasos**, priorizados y con las decisiones de diseño ya tomadas: [HANDOFF.md](HANDOFF.md) y [ADR-003](docs/01_Arquitectura/ADR-003_Modelo_extendido_paginas_e_interoperabilidad.md). Más allá de eso: `archiflow diff` (contrastar el diagrama contra el código en CI) y la generación del esqueleto OpenAPI, que cierra el ciclo contract-first.
 
 ## Licencia
 
