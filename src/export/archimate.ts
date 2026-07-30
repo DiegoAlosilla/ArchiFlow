@@ -1,7 +1,9 @@
 import type { Ir, IrNode } from '../schema/compile.js';
+import type { NodeKind } from '../schema/schema.js';
 
 const escape = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const typeFor = (node: IrNode) => ({ gateway: 'ApplicationService', database: 'DataObject', storage: 'DataObject', cache: 'SystemSoftware', broker: 'TechnologyService' }[node.kind] ?? 'ApplicationComponent');
+const ARCHIMATE_TYPES: Partial<Record<NodeKind, string>> = { gateway: 'ApplicationService', database: 'DataObject', storage: 'DataObject', cache: 'SystemSoftware', broker: 'TechnologyService' };
+const typeFor = (node: IrNode) => ARCHIMATE_TYPES[node.kind] ?? 'ApplicationComponent';
 
 /** ArchiMate Open Exchange XML: formato de intercambio, no el modelo interno. */
 export function toArchimate(ir: Ir): string {
