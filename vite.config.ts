@@ -14,6 +14,7 @@ export default defineConfig({
       '@archiflow/shared': resolvePath('./src/shared/index.ts'),
       '@archiflow/layout': resolvePath('./src/layout/index.ts'),
       '@archiflow/theme': resolvePath('./src/theme.ts'),
+      '@archiflow/export': resolvePath('./src/export/index.ts'),
     },
   },
   server: {

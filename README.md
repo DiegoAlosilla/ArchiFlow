@@ -28,9 +28,10 @@ Abre `http://localhost:4123`. Edita el `.arch.yaml` y el navegador se actualiza 
 La web tiene dos modos. En **Ver** el diagrama se reproduce; en **Editar** puedes:
 
 - Arrastrar nodos y que la posición quede fijada en el YAML.
+- **Redimensionar** nodos y zonas con las asas del elemento seleccionado.
 - Cambiar cualquier propiedad desde el inspector, incluido el `id` (se actualizan en cascada todos los pasos que lo referencian).
 - Añadir y borrar nodos, zonas y flujos.
-- Arrastrar de un nodo a otro para **añadir un paso** al flujo activo. No se dibujan aristas: las aristas se infieren de los pasos, así que ofrecer un gesto de "dibujar flecha" mentiría sobre el modelo.
+- Arrastrar de un conector a otro para **añadir un paso** al flujo activo. No se dibujan aristas: las aristas se infieren de los pasos, así que ofrecer un gesto de "dibujar flecha" mentiría sobre el modelo.
 - Reordenar y editar los pasos de un flujo.
 
 Lo importante de cómo está hecho: la web **no reescribe el fichero entero**. Envía mutaciones semánticas que el servidor aplica sobre el AST del YAML, de modo que **tus comentarios, el orden y el formato sobreviven** — un retoque produce un diff de una línea. Antes de escribir se valida el resultado completo; si la edición dejaría el diagrama inválido, no se toca el disco y se te dice por qué.
@@ -111,14 +112,25 @@ da a la vez la arista, el nombre del destino y hasta la zona.
 | `archiflow serve [dir]` | Web local con recarga en caliente sobre los `.arch.yaml` |
 | `archiflow validate [dir]` | Valida contra el esquema, con línea y columna en cada error |
 | `archiflow scan [repo]` | Recolecta evidencias de un microservicio Quarkus/Spring |
-| `archiflow export <file> --to drawio\|mermaid` | Exporta |
+| `archiflow export <file> --to drawio\|svg\|mermaid\|json` | Exporta |
 
 ## Exportar
 
-La web animada es el entregable. Los exports existen para compartir con quien no tiene ArchiFlow:
+La web animada es el entregable. Los exports existen para compartir con quien no tiene ArchiFlow. Están en el menú **Exportar** de la web y en `archiflow export`:
 
-- **draw.io** (`.drawio`): una página con la topología y **una página por flujo con los pasos numerados**. Es la traducción honesta de una animación a un formato estático: se pierde el movimiento, se conserva el orden. Usa las mismas posiciones que la web.
-- **Mermaid** (`.md`): la topología como `flowchart` y cada flujo como `sequenceDiagram`. Para pegar en la descripción de un PR — GitHub lo renderiza — y porque es el formato que un LLM entiende sin contexto adicional.
+| Formato | Para qué |
+|---|---|
+| **draw.io** (`.drawio`) | Una página con la topología y **una por flujo, con los pasos numerados**. Traducción honesta de una animación a un formato estático: se pierde el movimiento, se conserva el orden. |
+| **SVG** | Vectorial y autocontenido. Se abre en cualquier sitio, se incrusta en un correo y draw.io también lo importa. |
+| **PNG / JPG** | Rasterizados del SVG a 1×, 2× o 3×, con tema claro u oscuro y fondo opcionalmente transparente. |
+| **Mermaid** (`.md`) | Topología como `flowchart` y cada flujo como `sequenceDiagram`. Para pegar en un PR — GitHub lo renderiza — y porque un LLM lo entiende sin contexto. |
+| **JSON** | El modelo compilado, con las aristas ya inferidas y la línea de tiempo calculada, para alimentar otra herramienta. |
+
+Todos los formatos de imagen salen del **mismo layout y el mismo trazador de aristas que usa la web**, así que el fichero exportado es el diagrama que estabas viendo, no una reconstrucción parecida. Y todo se genera en tu máquina: nada sale de ella.
+
+```bash
+npx archiflow export mi-diagrama.arch.yaml --to svg --flow listar-cuentas --light
+```
 
 ## Desarrollo
 
@@ -135,9 +147,13 @@ Versión temprana. Funciona el ciclo completo (esquema → validación → rende
 
 Del inspector aún faltan `provides`, `topics` y `tags`: esos campos hay que tocarlos en el YAML.
 
-**Fuera de alcance por ahora**, para evitar deriva: importar desde draw.io, colaboración multiusuario, exportación a vídeo y generación de código del microservicio.
+**Fuera de alcance por ahora**, para evitar deriva: importar desde draw.io, colaboración multiusuario y generación de código del microservicio.
 
-**Siguiente paso previsto:** `archiflow diff` (comparar el diagrama commiteado contra el código, para CI) y la generación del esqueleto OpenAPI desde el diagrama, que cierra el ciclo contract-first.
+**Siguientes pasos previstos:**
+
+- **GIF animado y PDF.** El GIF es lo que permitiría pegar el recorrido en un Confluence o un Teams, que es donde acaba viviendo la documentación. Requiere cuantización de color propia: el tema oscuro con degradados sufre mucho en los 256 colores de GIF, y hacerlo mal se ve peor que no hacerlo.
+- **`archiflow diff`**: comparar el diagrama commiteado contra el código, para poder fallar un build cuando el diagrama miente.
+- **Esqueleto OpenAPI desde el diagrama**, que cierra el ciclo contract-first.
 
 ## Licencia
 

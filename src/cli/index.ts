@@ -7,7 +7,9 @@ import { compile } from '../schema/compile.js';
 import { parseDiagram, type Issue } from '../schema/parse.js';
 import { scanRepository } from '../analyzer/index.js';
 import { toDrawio } from '../export/drawio.js';
+import { toJson } from '../export/json.js';
 import { toMermaid } from '../export/mermaid.js';
+import { toSvg } from '../export/svg.js';
 import { loadAllDiagrams } from './loader.js';
 import { serve } from './server.js';
 
@@ -61,52 +63,96 @@ cli
   });
 
 cli
-  .command('export <file>', 'Exporta un diagrama a draw.io o Mermaid')
-  .option('--to <format>', 'Formato: drawio | mermaid', { default: 'drawio' })
+  .command('export <file>', 'Exporta un diagrama a draw.io, SVG, Mermaid o JSON')
+  .option('--to <format>', 'Formato: drawio | svg | mermaid | json', { default: 'drawio' })
   .option('-o, --out <file>', 'Fichero de salida')
-  .action(async (file: string, options: { to: string; out?: string }) => {
-    const input = path.resolve(process.cwd(), file);
-    const source = await readFile(input, 'utf8');
-    const result = parseDiagram(source);
+  .option('--flow <id>', 'Resalta un flujo concreto (svg)')
+  .option('--light', 'Tema claro, para imprimir o pegar en un documento (svg)', { default: false })
+  .option('--transparent', 'Fondo transparente (svg)', { default: false })
+  .action(
+    async (
+      file: string,
+      options: { to: string; out?: string; flow?: string; light: boolean; transparent: boolean },
+    ) => {
+      const input = path.resolve(process.cwd(), file);
+      const source = await readFile(input, 'utf8');
+      const result = parseDiagram(source);
 
-    if (!result.ok || !result.diagram) {
-      console.log(pc.red(`No se pudo exportar ${file}:`));
-      printIssues(file, result.issues);
-      process.exitCode = 1;
-      return;
-    }
+      if (!result.ok || !result.diagram) {
+        console.log(pc.red(`No se pudo exportar ${file}:`));
+        printIssues(file, result.issues);
+        process.exitCode = 1;
+        return;
+      }
 
-    const ir = compile(result.diagram);
-    const format = options.to.toLowerCase();
+      const ir = compile(result.diagram);
+      const format = options.to.toLowerCase();
 
-    let content: string;
-    let extension: string;
+      if (options.flow && !ir.flows.some((flow) => flow.id === options.flow)) {
+        console.log(
+          pc.red(`No existe el flujo '${options.flow}'. Hay: ${ir.flows.map((f) => f.id).join(', ')}`),
+        );
+        process.exitCode = 1;
+        return;
+      }
 
-    if (format === 'drawio') {
-      content = await toDrawio(ir);
-      extension = '.drawio';
-    } else if (format === 'mermaid' || format === 'md') {
-      content = toMermaid(ir);
-      extension = '.md';
-    } else {
-      console.log(pc.red(`Formato desconocido: ${options.to}. Usa 'drawio' o 'mermaid'.`));
-      process.exitCode = 1;
-      return;
-    }
+      let content: string;
+      let extension: string;
 
-    const output = options.out
-      ? path.resolve(process.cwd(), options.out)
-      : input.replace(/\.arch\.ya?ml$/i, extension);
+      switch (format) {
+        case 'drawio':
+        case 'xml':
+          content = await toDrawio(ir);
+          extension = '.drawio';
+          break;
+        case 'svg':
+          content = await toSvg(ir, {
+            flowId: options.flow,
+            light: options.light,
+            transparent: options.transparent,
+          });
+          extension = '.svg';
+          break;
+        case 'mermaid':
+        case 'md':
+          content = toMermaid(ir);
+          extension = '.md';
+          break;
+        case 'json':
+          content = toJson(ir);
+          extension = '.json';
+          break;
+        default:
+          console.log(
+            pc.red(`Formato desconocido: ${options.to}. Usa 'drawio', 'svg', 'mermaid' o 'json'.`),
+          );
+          process.exitCode = 1;
+          return;
+      }
 
-    await writeFile(output, content, 'utf8');
-    console.log(`${pc.green('✓')} ${path.relative(process.cwd(), output)}`);
+      const suffix = options.flow ? `-${options.flow}${extension}` : extension;
+      const output = options.out
+        ? path.resolve(process.cwd(), options.out)
+        : input.replace(/\.arch\.ya?ml$/i, suffix);
 
-    if (format === 'drawio' && ir.flows.length > 0) {
-      console.log(
-        pc.dim(`  ${ir.flows.length + 1} páginas: topología + una por flujo, con los pasos numerados.`),
-      );
-    }
-  });
+      await writeFile(output, content, 'utf8');
+      console.log(`${pc.green('✓')} ${path.relative(process.cwd(), output)}`);
+
+      if ((format === 'drawio' || format === 'xml') && ir.flows.length > 0) {
+        console.log(
+          pc.dim(`  ${ir.flows.length + 1} páginas: topología + una por flujo, con los pasos numerados.`),
+        );
+      }
+      if (format === 'svg' && !options.flow && ir.flows.length > 0) {
+        console.log(pc.dim(`  Usa --flow <id> para resaltar un recorrido concreto.`));
+      }
+      // PNG y JPG salen de este mismo SVG, pero rasterizarlos necesita un
+      // navegador: se descargan desde la web con `archiflow serve`.
+      if (format === 'svg') {
+        console.log(pc.dim('  Para PNG o JPG, usa el menú Exportar de la web.'));
+      }
+    },
+  );
 
 cli
   .command('scan [repo]', 'Recolecta evidencias de un microservicio Quarkus o Spring Boot')

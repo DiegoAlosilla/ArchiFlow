@@ -19,7 +19,8 @@
       "@archiflow/schema": ["./src/schema/index.ts"],
       "@archiflow/shared": ["./src/shared/index.ts"],
       "@archiflow/layout": ["./src/layout/index.ts"],
-      "@archiflow/theme": ["./src/theme.ts"]
+      "@archiflow/theme": ["./src/theme.ts"],
+      "@archiflow/export": ["./src/export/index.ts"]
     }
   },
   "include": ["src", "web/src", "tests", "vite.config.ts", "vitest.config.ts", "tsup.config.ts"]

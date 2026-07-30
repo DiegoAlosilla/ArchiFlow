@@ -5,6 +5,7 @@ import { useMutations } from './useMutations';
 import { Canvas } from './Canvas';
 import { Sidebar, freshId } from './Sidebar';
 import { Inspector } from './Inspector';
+import { ExportMenu } from './ExportMenu';
 import { Timeline } from './Timeline';
 import { clock } from './playback';
 import type { Selection } from './selection';
@@ -109,6 +110,9 @@ export default function App() {
 
         {ir && (
           <div className="topbar__tools">
+            <ExportMenu ir={ir} flowId={selectedFlow?.id} fileName={selectedDiagram?.file ?? 'diagrama'} />
+            <span className="topbar__divider" />
+
             {editing && (
               <>
                 <button type="button" className="tool" onClick={addNode}>
