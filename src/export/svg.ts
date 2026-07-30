@@ -213,7 +213,8 @@ export async function toSvg(ir: Ir, options: SvgOptions = {}): Promise<string> {
 
     const start = anchorPoint(from, slot.sourceSide, slot.sourceIndex, slot.sourceCount);
     const end = anchorPoint(to, slot.targetSide, slot.targetIndex, slot.targetCount);
-    const route = routeEdge(start, slot.sourceSide, end, slot.targetSide);
+    const obstacles = [...boxes.values()].filter((box) => box.id !== edge.source && box.id !== edge.target);
+    const route = routeEdge(start, slot.sourceSide, end, slot.targetSide, obstacles);
 
     const color = dimmed ? palette.dim : protocolColor[edge.protocol];
     const opacity = dimmed ? 0.25 : 1;

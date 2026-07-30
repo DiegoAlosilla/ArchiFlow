@@ -14,6 +14,7 @@ import type { Ir, IrNode } from '../schema/compile.js';
 
 export * from './anchors.js';
 export * from './path.js';
+export * from './router.js';
 
 const elk = new ELK();
 

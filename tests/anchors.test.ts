@@ -128,4 +128,36 @@ describe('routeEdge', () => {
     expect(route.points).toHaveLength(2);
     expect(route.d).not.toContain('Q');
   });
+
+  it('esquiva un nodo que queda justo entre el origen y el destino', () => {
+    const obstacle = box('medio', 40, 120);
+    const route = routeEdge(
+      { x: 50, y: 50 },
+      'bottom',
+      { x: 50, y: 350 },
+      'top',
+      [obstacle],
+    );
+
+    const intersectsInterior = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+      if (a.x === b.x) {
+        return (
+          a.x > obstacle.x &&
+          a.x < obstacle.x + obstacle.width &&
+          Math.max(Math.min(a.y, b.y), obstacle.y) < Math.min(Math.max(a.y, b.y), obstacle.y + obstacle.height)
+        );
+      }
+      return (
+        a.y > obstacle.y &&
+        a.y < obstacle.y + obstacle.height &&
+        Math.max(Math.min(a.x, b.x), obstacle.x) < Math.min(Math.max(a.x, b.x), obstacle.x + obstacle.width)
+      );
+    };
+
+    for (let i = 1; i < route.points.length; i++) {
+      const a = route.points[i - 1]!;
+      const b = route.points[i]!;
+      expect(intersectsInterior(a, b)).toBe(false);
+    }
+  });
 });

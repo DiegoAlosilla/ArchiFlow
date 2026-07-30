@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BaseEdge, EdgeLabelRenderer, useInternalNode, type EdgeProps } from '@xyflow/react';
+import { BaseEdge, EdgeLabelRenderer, useInternalNode, useStore, type EdgeProps } from '@xyflow/react';
 import { anchorPoint, routeEdge } from '@archiflow/layout';
 import { protocolColor } from './kinds';
 import { removeEdgePath, setEdgePath } from './edgeRegistry';
@@ -19,6 +19,7 @@ import type { EdgeData } from './layout';
 export function ArchiflowEdge({ id, source, target, data }: EdgeProps) {
   const sourceNode = useInternalNode(source);
   const targetNode = useInternalNode(target);
+  const nodeLookup = useStore((state) => state.nodeLookup);
 
   const edgeData = data as EdgeData | undefined;
   const edge = edgeData?.edge;
@@ -44,7 +45,16 @@ export function ArchiflowEdge({ id, source, target, data }: EdgeProps) {
   const from = anchorPoint(sourceBox, slot.sourceSide, slot.sourceIndex, slot.sourceCount);
   const to = anchorPoint(targetBox, slot.targetSide, slot.targetIndex, slot.targetCount);
 
-  const route = routeEdge(from, slot.sourceSide, to, slot.targetSide);
+  // `nodeLookup` conserva posiciones absolutas vivas durante el arrastre. Las
+  // zonas son contenedores visuales: solo los servicios bloquean una flecha.
+  const obstacles = [...nodeLookup.values()].flatMap((node) => {
+    if (node.id === source || node.id === target || node.type !== 'service') return [];
+    const position = node.internals.positionAbsolute;
+    const width = node.measured.width ?? 0;
+    const height = node.measured.height ?? 0;
+    return width > 0 && height > 0 ? [{ x: position.x, y: position.y, width, height }] : [];
+  });
+  const route = routeEdge(from, slot.sourceSide, to, slot.targetSide, obstacles);
 
   // La capa de paquetes lee el trazado desde el registro, no desde React.
   setEdgePath(id, route.d);
