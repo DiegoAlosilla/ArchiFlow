@@ -36,9 +36,9 @@ const NODE_SHAPE: Partial<Record<IrNode['kind'], string>> = {
   job: 'ellipse;',
 };
 
-function nodeStyle(node: IrNode, dimmed: boolean): string {
+function nodeStyle(node: IrNode, dimmed: boolean, archimate = false): string {
   const accent = kindAccent[node.kind];
-  const shape = NODE_SHAPE[node.kind] ?? 'rounded=1;arcSize=12;';
+  const shape = archimate ? 'shape=mxgraph.archimate3.application;archiType=rounded;' : NODE_SHAPE[node.kind] ?? 'rounded=1;arcSize=12;';
   return [
     shape,
     'whiteSpace=wrap;html=1;',
@@ -100,6 +100,7 @@ function multilineLabel(lines: string[]): string {
 interface PageOptions {
   /** Si se indica, solo este flujo se dibuja en vivo; el resto queda atenuado. */
   flow?: IrFlow;
+  archimate?: boolean;
 }
 
 function renderPage(ir: Ir, boxes: Map<string, Box>, zoneBoxes: Box[], options: PageOptions): string {
@@ -124,7 +125,7 @@ function renderPage(ir: Ir, boxes: Map<string, Box>, zoneBoxes: Box[], options: 
     const dimmed = activeNodes !== null && !activeNodes.has(node.id);
     const parent = node.zone ? cellId('zone', node.zone) : '1';
     cells.push(
-      `<mxCell id="${cellId('n', node.id)}" value="${escapeXml(nodeLabel(node))}" style="${nodeStyle(node, dimmed)}" vertex="1" parent="${parent}">` +
+      `<mxCell id="${cellId('n', node.id)}" value="${escapeXml(nodeLabel(node))}" style="${nodeStyle(node, dimmed, options.archimate)}" vertex="1" parent="${parent}">` +
         `<mxGeometry x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" as="geometry" /></mxCell>`,
     );
   }
@@ -154,7 +155,7 @@ function renderPage(ir: Ir, boxes: Map<string, Box>, zoneBoxes: Box[], options: 
   return cells.join('\n        ');
 }
 
-export async function toDrawio(ir: Ir): Promise<string> {
+export async function toDrawio(ir: Ir, options: { archimate?: boolean } = {}): Promise<string> {
   const laid = await computeLayout(ir);
 
   // Los hijos llevan coordenadas relativas a su zona, que es justo lo que
@@ -172,10 +173,10 @@ export async function toDrawio(ir: Ir): Promise<string> {
     `      <root>\n        ${content}\n      </root>\n` +
     '    </mxGraphModel>\n  </diagram>';
 
-  pages.push(page('Topología', 'topologia', renderPage(ir, boxes, laid.zones, {})));
+  pages.push(page('Topología', 'topologia', renderPage(ir, boxes, laid.zones, { archimate: options.archimate })));
 
   for (const flow of ir.flows) {
-    pages.push(page(flow.label, `flow-${flow.id}`, renderPage(ir, boxes, laid.zones, { flow })));
+    pages.push(page(flow.label, `flow-${flow.id}`, renderPage(ir, boxes, laid.zones, { flow, archimate: options.archimate })));
   }
 
   return (

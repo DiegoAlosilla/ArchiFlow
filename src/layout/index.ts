@@ -37,7 +37,9 @@ export function nodeWidth(node: IrNode): number {
 }
 
 export function nodeHeight(node: IrNode): number {
-  return node.layout?.height ?? NODE_HEIGHT;
+  // Un servicio expandido contiene sus operaciones como hijos visuales; el
+  // contenedor conserva una única topología pero reserva filas para ellas.
+  return node.layout?.height ?? (node.expanded ? NODE_HEIGHT + node.provides.length * 28 + 8 : NODE_HEIGHT);
 }
 
 export interface Box {

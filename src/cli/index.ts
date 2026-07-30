@@ -70,10 +70,11 @@ cli
   .option('--flow <id>', 'Resalta un flujo concreto (svg)')
   .option('--light', 'Tema claro, para imprimir o pegar en un documento (svg)', { default: false })
   .option('--transparent', 'Fondo transparente (svg)', { default: false })
+  .option('--archimate', 'Usa formas ArchiMate al exportar draw.io', { default: false })
   .action(
     async (
       file: string,
-      options: { to: string; out?: string; flow?: string; light: boolean; transparent: boolean },
+      options: { to: string; out?: string; flow?: string; light: boolean; transparent: boolean; archimate: boolean },
     ) => {
       const input = path.resolve(process.cwd(), file);
       const source = await readFile(input, 'utf8');
@@ -103,7 +104,7 @@ cli
       switch (format) {
         case 'drawio':
         case 'xml':
-          content = await toDrawio(ir);
+          content = await toDrawio(ir, { archimate: options.archimate });
           extension = '.drawio';
           break;
         case 'svg':

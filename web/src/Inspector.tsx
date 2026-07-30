@@ -362,6 +362,38 @@ function StepInspector({ ir, selection, onSelect, mutate }: Props) {
         onCommit={(value) => patch({ returns: value })}
       />
 
+      <TextField
+        label="Request de ejemplo"
+        value={step.request}
+        mono
+        multiline
+        hint="Texto libre; puede ser JSON incompleto durante el diseño."
+        onCommit={(value) => patch({ request: value })}
+      />
+
+      <TextField
+        label="Response de ejemplo"
+        value={step.response}
+        mono
+        multiline
+        hint="Texto libre; puede ser JSON incompleto durante el diseño."
+        onCommit={(value) => patch({ response: value })}
+      />
+
+      <button
+        type="button"
+        className="inspector__reset"
+        onClick={() => {
+          const format = (value: string | undefined) => {
+            if (!value) return value;
+            try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }
+          };
+          void mutate({ op: 'step.update', flowId: flow.id, index: selection.index, patch: { request: format(step.request), response: format(step.response) } });
+        }}
+      >
+        Formatear JSON
+      </button>
+
       <TextField label="Nota" value={step.note} multiline onCommit={(value) => patch({ note: value })} />
     </div>
   );
