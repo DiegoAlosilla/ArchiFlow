@@ -62,6 +62,30 @@ Para cada paso:
 - `latencyMs` cuando se conozca o se pueda estimar: es lo que hace evidente dónde está el cuello de botella.
 - `condition` para el porqué del paso: `cache miss`, `cliente premium`.
 - `note` para lo que no cabe en la operación.
+- `request` y `response` para un ejemplo del contrato. Es texto libre: si el usuario da un JSON a medias, va tal cual; no lo completes inventando campos.
+
+Si el usuario detalla los endpoints de un servicio, dale `expanded: true` y lista sus operaciones con `id` en `provides`: se dibujan como filas dentro de la caja. Entonces un paso puede apuntar a la operación concreta con `nodo/operacion`:
+
+```yaml
+nodes:
+  - id: bff-cuentas
+    kind: service
+    expanded: true
+    provides:
+      - id: listar-cuentas
+        method: GET
+        path: /v1/cuentas
+
+flows:
+  - id: listar
+    steps:
+      - from: apigw
+        to: bff-cuentas/listar-cuentas
+        request: |
+          { "clienteId": "0012345" }
+```
+
+La flecha sigue yendo de servicio a servicio: la operación solo afina la etiqueta y el punto de llegada.
 
 ### 4. Escribir y validar
 

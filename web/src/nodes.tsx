@@ -89,9 +89,13 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
         </span>
         {node.expanded && node.provides.length > 0 && (
           <div className="node__endpoints">
-            {node.provides.map((endpoint, index) => (
-              <span key={endpoint.id ?? `${endpoint.method}-${endpoint.path}-${index}`} className="node__endpoint">
-                <b>{endpoint.method ?? 'OP'}</b> {endpoint.path ?? endpoint.label ?? endpoint.id ?? 'operación'}
+            {node.provides.map((operation, index) => (
+              <span
+                key={operation.id ?? `${operation.method}-${operation.path}-${index}`}
+                className="node__endpoint"
+              >
+                <b>{operation.method ?? 'OP'}</b>{' '}
+                {operation.path ?? operation.label ?? operation.id ?? 'operación'}
               </span>
             ))}
           </div>
@@ -101,4 +105,4 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
   );
 }
 
-export const nodeTypes = { zone: ZoneNode, service: ServiceNode, endpoint: ServiceNode };
+export const nodeTypes = { zone: ZoneNode, service: ServiceNode };

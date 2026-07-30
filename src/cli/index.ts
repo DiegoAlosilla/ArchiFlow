@@ -126,7 +126,7 @@ cli
           break;
         case 'archimate':
         case 'archi':
-          content = toArchimate(ir);
+          content = await toArchimate(ir);
           extension = '.xml';
           break;
         default:

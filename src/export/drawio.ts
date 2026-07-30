@@ -1,4 +1,4 @@
-import type { Ir, IrEdge, IrFlow, IrNode } from '../schema/compile.js';
+import { endpointSignature, type Ir, type IrEdge, type IrFlow, type IrNode } from '../schema/compile.js';
 import { computeLayout, type Box } from '../layout/index.js';
 import { kindAccent, protocolColor } from '../theme.js';
 
@@ -36,11 +36,52 @@ const NODE_SHAPE: Partial<Record<IrNode['kind'], string>> = {
   job: 'ellipse;',
 };
 
+/** Colores de capa de la librería `archimate3` de draw.io. */
+const APPLICATION_LAYER = '#99ffff';
+const TECHNOLOGY_LAYER = '#AFFFAF';
+
+/**
+ * Formas ArchiMate 3 de draw.io, siguiendo la correspondencia de tipos del
+ * ADR-003. Los `appType` y `archiType` son los de la librería `archimate3`
+ * (`Sidebar-ArchiMate3.js`): con un valor inventado la forma se dibuja como un
+ * rectángulo genérico y el fichero deja de parecer ArchiMate.
+ */
+const ARCHIMATE_SHAPE: Record<IrNode['kind'], { appType: string; archiType: string; layer: string }> = {
+  // ApplicationComponent
+  service: { appType: 'comp', archiType: 'square', layer: APPLICATION_LAYER },
+  frontend: { appType: 'comp', archiType: 'square', layer: APPLICATION_LAYER },
+  client: { appType: 'comp', archiType: 'square', layer: APPLICATION_LAYER },
+  external: { appType: 'comp', archiType: 'square', layer: APPLICATION_LAYER },
+  job: { appType: 'comp', archiType: 'square', layer: APPLICATION_LAYER },
+  component: { appType: 'comp', archiType: 'square', layer: APPLICATION_LAYER },
+  // ApplicationService
+  gateway: { appType: 'serv', archiType: 'rounded', layer: APPLICATION_LAYER },
+  // DataObject
+  database: { appType: 'passive', archiType: 'square', layer: APPLICATION_LAYER },
+  storage: { appType: 'passive', archiType: 'square', layer: APPLICATION_LAYER },
+  // SystemSoftware y TechnologyService
+  cache: { appType: 'sysSw', archiType: 'square', layer: TECHNOLOGY_LAYER },
+  broker: { appType: 'serv', archiType: 'rounded', layer: TECHNOLOGY_LAYER },
+};
+
 function nodeStyle(node: IrNode, dimmed: boolean, archimate = false): string {
   const accent = kindAccent[node.kind];
-  const shape = archimate ? 'shape=mxgraph.archimate3.application;archiType=rounded;' : NODE_SHAPE[node.kind] ?? 'rounded=1;arcSize=12;';
+  if (archimate) {
+    const { appType, archiType, layer } = ARCHIMATE_SHAPE[node.kind];
+    return [
+      `shape=mxgraph.archimate3.application;appType=${appType};archiType=${archiType};`,
+      'html=1;whiteSpace=wrap;outlineConnect=0;',
+      // El color de capa manda sobre el acento de ArchiFlow: quien pide formas
+      // ArchiMate espera leer la capa por el color, que es la convención.
+      `fillColor=${dimmed ? '#f1f5f9' : layer};`,
+      `strokeColor=${dimmed ? '#cbd5e1' : '#0f172a'};`,
+      `fontColor=${dimmed ? '#94a3b8' : '#0f172a'};`,
+      'fontSize=12;verticalAlign=top;align=center;spacing=6;',
+      node.external ? 'dashed=1;' : '',
+    ].join('');
+  }
   return [
-    shape,
+    NODE_SHAPE[node.kind] ?? 'rounded=1;arcSize=12;',
     'whiteSpace=wrap;html=1;',
     `fillColor=${dimmed ? '#f8fafc' : '#ffffff'};`,
     `strokeColor=${dimmed ? '#cbd5e1' : accent};`,
@@ -61,9 +102,15 @@ function edgeStyle(edge: IrEdge, dimmed: boolean): string {
   ].join('');
 }
 
-function zoneStyle(color: string): string {
+function zoneStyle(color: string, archimate = false): string {
+  // Una zona es un Grouping (ADR-003): con formas ArchiMate se dibuja como tal
+  // en vez de como un rectángulo punteado cualquiera.
+  const shape = archimate
+    ? 'shape=mxgraph.archimate3.application;appType=grouping;archiType=square;outlineConnect=0;'
+    : 'rounded=1;arcSize=6;';
   return [
-    'rounded=1;arcSize=6;whiteSpace=wrap;html=1;',
+    shape,
+    'whiteSpace=wrap;html=1;',
     `fillColor=none;strokeColor=${color};dashed=1;strokeWidth=1.5;`,
     'verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;',
     `fontSize=11;fontStyle=1;fontColor=${color};`,
@@ -82,12 +129,15 @@ function zoneStyle(color: string): string {
 function nodeLabel(node: IrNode): string {
   const lines = [`<b>${escapeXml(node.label)}</b>`];
   if (node.tech) lines.push(`<font style="font-size:10px;color:#64748b">${escapeXml(node.tech)}</font>`);
-  const endpoint = node.provides[0];
-  if (endpoint?.path) {
-    const method = endpoint.method ? `${endpoint.method} ` : '';
-    lines.push(
-      `<font style="font-size:9px;color:#94a3b8">${escapeXml(method + endpoint.path)}</font>`,
-    );
+
+  // Un nodo expandido lista todas sus operaciones, porque el layout ya le ha
+  // reservado alto para ellas (ver `nodeHeight`); si no, solo la primera como
+  // subtítulo.
+  const endpoints = node.expanded ? node.provides : node.provides.slice(0, 1);
+  for (const endpoint of endpoints) {
+    const signature = endpointSignature(endpoint);
+    if (!signature) continue;
+    lines.push(`<font style="font-size:9px;color:#94a3b8">${escapeXml(signature)}</font>`);
   }
   return lines.join('<br/>');
 }
@@ -114,7 +164,7 @@ function renderPage(ir: Ir, boxes: Map<string, Box>, zoneBoxes: Box[], options: 
     if (!zone) continue;
     const title = zone.platform ? `${zone.label} — ${zone.platform}` : zone.label;
     cells.push(
-      `<mxCell id="${cellId('zone', zone.id)}" value="${escapeXml(title)}" style="${zoneStyle(zone.color)}" vertex="1" parent="1">` +
+      `<mxCell id="${cellId('zone', zone.id)}" value="${escapeXml(title)}" style="${zoneStyle(zone.color, options.archimate)}" vertex="1" parent="1">` +
         `<mxGeometry x="${zoneBox.x}" y="${zoneBox.y}" width="${zoneBox.width}" height="${zoneBox.height}" as="geometry" /></mxCell>`,
     );
   }

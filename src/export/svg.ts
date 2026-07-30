@@ -1,9 +1,11 @@
-import type { Ir, IrFlow, IrNode } from '../schema/compile.js';
+import { endpointSignature, type Ir, type IrFlow, type IrNode } from '../schema/compile.js';
 import {
   anchorPoint,
   computeLayout,
   computeSlots,
   routeEdge,
+  ENDPOINT_ROW,
+  NODE_HEADER,
   type Box,
   type LaidOutGraph,
 } from '../layout/index.js';
@@ -97,20 +99,24 @@ function renderNode(node: IrNode, box: Box, palette: Palette, dimmed: boolean): 
   const textColor = dimmed ? palette.dim : palette.text;
   const mutedColor = dimmed ? palette.dim : palette.textMuted;
 
+  // Un nodo expandido lista sus operaciones en filas bajo la cabecera, así que
+  // el icono y el nombre se centran en la cabecera y no en la caja entera.
+  const expanded = node.expanded && node.provides.length > 0;
+  const header = expanded ? Math.min(box.height, NODE_HEADER) : box.height;
+
   const iconSize = 34;
   const iconX = box.x + 14;
-  const iconY = box.y + (box.height - iconSize) / 2;
+  const iconY = box.y + (header - iconSize) / 2;
   const textX = iconX + iconSize + 11;
   const available = box.width - (textX - box.x) - 14;
 
   const subtitle = node.tech ?? '';
-  const endpoint = node.provides[0];
-  const endpointText = endpoint?.path
-    ? `${endpoint.method ? `${endpoint.method} ` : ''}${endpoint.path}`
-    : '';
+  // Sin expandir se muestra solo la primera operación, como subtítulo; expandido
+  // van todas abajo y repetirla aquí sería ruido.
+  const endpointText = expanded ? '' : endpointSignature(node.provides[0] ?? {});
 
   const hasThreeLines = subtitle !== '' && endpointText !== '';
-  const baseY = box.y + box.height / 2;
+  const baseY = box.y + header / 2;
   const labelY = hasThreeLines ? baseY - 9 : subtitle || endpointText ? baseY - 4 : baseY + 4;
 
   const parts = [
@@ -141,6 +147,25 @@ function renderNode(node: IrNode, box: Box, palette: Palette, dimmed: boolean): 
       `<text x="${textX}" y="${y}" font-family="${MONO}" font-size="9.5" ` +
         `fill="${mutedColor}">${escapeXml(truncate(endpointText, available, 5.6))}</text>`,
     );
+  }
+
+  if (expanded) {
+    const rowX = box.x + 14;
+    const rowWidth = box.width - 28;
+    node.provides.forEach((operation, index) => {
+      const y = box.y + header + index * ENDPOINT_ROW;
+      const method = operation.method ?? 'OP';
+      const target = operation.path ?? operation.label ?? operation.id ?? 'operación';
+      parts.push(
+        `<rect x="${rowX}" y="${y}" width="${rowWidth}" height="${ENDPOINT_ROW - 4}" rx="4" ` +
+          `fill="${accent}" fill-opacity="0.08" stroke="${accent}" stroke-opacity="0.4" />`,
+        `<text x="${rowX + 7}" y="${y + 14.5}" font-family="${MONO}" font-size="9.5" ` +
+          `font-weight="700" fill="${accent}">${escapeXml(method)}</text>`,
+        `<text x="${rowX + 7 + method.length * 6.4 + 6}" y="${y + 14.5}" font-family="${MONO}" ` +
+          `font-size="9.5" fill="${mutedColor}">` +
+          `${escapeXml(truncate(target, rowWidth - 20 - method.length * 6.4, 5.6))}</text>`,
+      );
+    });
   }
 
   return parts.join('\n    ');

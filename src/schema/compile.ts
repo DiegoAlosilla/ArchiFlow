@@ -101,6 +101,19 @@ export interface Ir {
   flows: IrFlow[];
 }
 
+/**
+ * Cómo se escribe una operación en una caja: `GET /v1/cuentas`.
+ *
+ * Vive aquí porque la usan el canvas y los tres exportadores, y que cada uno la
+ * arme a su manera es justo cómo un endpoint acaba escrito de tres formas
+ * distintas en el mismo diagrama. Devuelve cadena vacía si no hay nada que
+ * mostrar, para que quien la use decida si pinta la línea.
+ */
+export function endpointSignature(operation: Operation): string {
+  const target = operation.path ?? operation.label ?? operation.id ?? '';
+  return [operation.method, target].filter(Boolean).join(' ');
+}
+
 /** Paleta de acento para las zonas que no declaran color. */
 const ZONE_COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6'];
 

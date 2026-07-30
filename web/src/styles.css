@@ -1245,12 +1245,68 @@ button {
   color: #fca5a5;
 }
 
-.contract-panel { position: absolute; right: 18px; bottom: 18px; z-index: 10; width: min(360px, 42%); padding: 10px; border: 1px solid var(--border); border-radius: 9px; background: color-mix(in srgb, var(--bg-panel) 94%, transparent); box-shadow: 0 8px 30px #0006; font: 12px var(--font-mono); }
-.contract-panel summary { cursor: pointer; color: var(--text); font-family: var(--font-sans); font-weight: 600; }
-.contract-panel pre { max-height: 160px; overflow: auto; white-space: pre-wrap; color: var(--text-dim); }
-.node__endpoints { position: absolute; left: 14px; right: 14px; top: 58px; display: grid; gap: 4px; }
-.node__endpoint { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 6px; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 4px; color: var(--text-dim); font: 10px ui-monospace, monospace; background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.node__endpoint b { color: var(--accent); margin-right: 4px; }
+/* ── Panel de contrato del paso seleccionado ────────────────── */
+
+.contract-panel {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 10;
+  width: min(360px, 42%);
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  box-shadow: 0 8px 30px #0006;
+  font: 12px var(--font-mono);
+}
+
+.contract-panel summary {
+  cursor: pointer;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+.contract-panel pre {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text-dim);
+}
+
+/* ── Operaciones dentro de un nodo expandido ────────────────── */
+
+/* `top` y la altura de fila salen de NODE_HEADER y ENDPOINT_ROW en
+   `src/layout/index.ts`, que es lo que el layout reserva y lo que dibuja el
+   exportador a SVG. Los tres números van juntos. */
+.node__endpoints {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 58px;
+  display: grid;
+  gap: 4px;
+}
+
+.node__endpoint {
+  display: block;
+  height: 22px;
+  padding: 4px 6px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text-dim);
+  font: 10px/1 ui-monospace, monospace;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.node__endpoint b {
+  margin-right: 4px;
+  color: var(--accent);
+}
 
 /* ── Asas de redimensionado ─────────────────────────────────── */
 
