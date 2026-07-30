@@ -100,4 +100,13 @@ describe('compile', () => {
     // 5 s reales no pueden durar 5 s de animación.
     expect(withLatency.flows[0]!.steps[0]!.durationMs).toBeLessThanOrEqual(2600);
   });
+
+  it('resuelve un endpoint a la topología del servicio y conserva contratos', () => {
+    const parsed = parseDiagram(`archiflow: 1\nname: Endpoints\nnodes:\n  - id: api\n  - id: cuentas\n    expanded: true\n    provides:\n      - id: listar\n        method: GET\n        path: /v1/cuentas\nflows:\n  - id: f\n    steps:\n      - from: api\n        to: cuentas/listar\n        request: '{"cliente": "1"}'\n        response: '{"cuentas": []}'\n`);
+    expect(parsed.ok).toBe(true);
+    const step = compile(parsed.diagram!).flows[0]!.steps[0]!;
+    expect(step.to).toBe('cuentas');
+    expect(step.toOp).toBe('listar');
+    expect(step.request).toContain('cliente');
+  });
 });

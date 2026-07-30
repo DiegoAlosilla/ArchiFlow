@@ -90,14 +90,19 @@ function validateSemantics(diagram: Diagram): Issue[] {
   /** Nodos tocados por algún flujo o arista, para detectar los huérfanos. */
   const referenced = new Set<string>();
 
-  const checkRef = (id: string, path: (string | number)[], context: string) => {
-    referenced.add(id);
-    if (!nodeIds.has(id)) {
+  const checkRef = (reference: string, path: (string | number)[], context: string) => {
+    const [id, operation] = reference.split('/');
+    referenced.add(id!);
+    if (!nodeIds.has(id!)) {
       issues.push({
         level: 'error',
         message: `${context} referencia el nodo '${id}', que no existe en 'nodes'`,
         path,
       });
+      return false;
+    }
+    if (operation && !diagram.nodes.find((node) => node.id === id)!.provides.some((provided) => provided.id === operation)) {
+      issues.push({ level: 'error', message: `${context} referencia la operación '${reference}', que no existe en 'provides'`, path });
       return false;
     }
     return true;

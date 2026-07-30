@@ -30,6 +30,7 @@ export interface IrNode {
   repo?: string;
   tags: string[];
   provides: Operation[];
+  expanded: boolean;
   topics: string[];
   external: boolean;
   /** Posición fijada a mano, relativa a su zona; gana sobre el auto-layout. */
@@ -64,6 +65,10 @@ export interface IrStep {
   latencyMs?: number;
   returns?: string;
   note?: string;
+  fromOp?: string;
+  toOp?: string;
+  request?: string;
+  response?: string;
   /** Momento de inicio dentro del flujo, en ms. */
   startMs: number;
   durationMs: number;
@@ -129,6 +134,11 @@ function labelFor(step: { label?: string; op?: string; protocol: Protocol }): st
   return step.protocol;
 }
 
+function splitReference(reference: string): { node: string; operation?: string } {
+  const [node, operation] = reference.split('/');
+  return { node: node!, operation };
+}
+
 export function compile(diagram: Diagram): Ir {
   const nodes: IrNode[] = diagram.nodes.map((node) => ({
     id: node.id,
@@ -141,6 +151,7 @@ export function compile(diagram: Diagram): Ir {
     repo: node.repo,
     tags: node.tags,
     provides: node.provides,
+    expanded: node.expanded,
     topics: node.topics,
     external: node.external,
     layout: node.layout,
@@ -199,11 +210,13 @@ export function compile(diagram: Diagram): Ir {
 
     let cursor = 0;
     const steps: IrStep[] = flow.steps.map((step, index) => {
-      track(step.from);
-      track(step.to);
+      const from = splitReference(step.from);
+      const to = splitReference(step.to);
+      track(from.node);
+      track(to.node);
 
       const label = labelFor(step);
-      const id = upsertEdge(step.from, step.to, step.protocol, step.async, label, flow.id);
+      const id = upsertEdge(from.node, to.node, step.protocol, step.async, label, flow.id);
 
       const durationMs = durationFor(step.latencyMs);
       const startMs = cursor;
@@ -213,8 +226,10 @@ export function compile(diagram: Diagram): Ir {
       return {
         index,
         edgeId: id,
-        from: step.from,
-        to: step.to,
+        from: from.node,
+        to: to.node,
+        fromOp: from.operation,
+        toOp: to.operation,
         label,
         protocol: step.protocol,
         async: step.async,
@@ -222,6 +237,8 @@ export function compile(diagram: Diagram): Ir {
         latencyMs: step.latencyMs,
         returns: step.returns,
         note: step.note,
+        request: step.request,
+        response: step.response,
         startMs,
         durationMs,
       };
