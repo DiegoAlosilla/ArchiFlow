@@ -15,8 +15,14 @@ export default function App() {
   const [diagramId, setDiagramId] = useState<string | null>(null);
   const [flowId, setFlowId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(-1);
-  const [editing, setEditing] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
+
+  /**
+   * No hay modo "ver" y modo "editar": el lienzo siempre es editable y el
+   * inspector aparece al seleccionar algo. Un conmutador obligaba a recordar
+   * en qué modo estabas antes de poder tocar nada.
+   */
+  const editing = true;
 
   const diagrams = payload?.diagrams ?? [];
 
@@ -47,10 +53,8 @@ export default function App() {
     if (selectedFlow && selectedFlow.id !== flowId) setFlowId(selectedFlow.id);
   }, [selectedFlow, flowId]);
 
-  /**
-   * Cambiar de flujo reinicia la reproducción. Durante la edición no arranca
-   * sola: con el diagrama moviéndose bajo el ratón, la animación estorba.
-   */
+  // Cambiar de flujo reinicia la reproducción y arranca sola: el usuario ha
+  // pedido ver ese recorrido, no darle a play después.
   useEffect(() => {
     if (!selectedFlow) {
       clock.pause();
@@ -60,12 +64,8 @@ export default function App() {
     }
     clock.setDuration(selectedFlow.durationMs);
     clock.seek(0);
-    if (!editing) clock.play();
-  }, [selectedFlow, editing]);
-
-  useEffect(() => {
-    if (editing) clock.pause();
-  }, [editing]);
+    clock.play();
+  }, [selectedFlow]);
 
   const handleStepChange = useCallback((index: number) => setCurrentStep(index), []);
 
@@ -110,37 +110,14 @@ export default function App() {
 
         {ir && (
           <div className="topbar__tools">
-            <ExportMenu ir={ir} flowId={selectedFlow?.id} fileName={selectedDiagram?.file ?? 'diagrama'} />
+            <button type="button" className="tool" onClick={addNode}>
+              + Nodo
+            </button>
+            <button type="button" className="tool" onClick={addZone}>
+              + Zona
+            </button>
             <span className="topbar__divider" />
-
-            {editing && (
-              <>
-                <button type="button" className="tool" onClick={addNode}>
-                  + Nodo
-                </button>
-                <button type="button" className="tool" onClick={addZone}>
-                  + Zona
-                </button>
-                <span className="topbar__divider" />
-              </>
-            )}
-
-            <div className="mode" role="group" aria-label="Modo">
-              <button
-                type="button"
-                className={`mode__button${editing ? '' : ' is-active'}`}
-                onClick={() => setEditing(false)}
-              >
-                Ver
-              </button>
-              <button
-                type="button"
-                className={`mode__button${editing ? ' is-active' : ''}`}
-                onClick={() => setEditing(true)}
-              >
-                Editar
-              </button>
-            </div>
+            <ExportMenu ir={ir} flowId={selectedFlow?.id} fileName={selectedDiagram?.file ?? 'diagrama'} />
           </div>
         )}
 

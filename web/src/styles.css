@@ -1,16 +1,20 @@
 :root {
-  --bg: #060910;
-  --bg-panel: #0b1120;
-  --bg-raised: #111a2e;
-  --border: #1e293b;
-  --border-soft: #172033;
-  --text: #e2e8f0;
-  --text-muted: #7c8aa5;
-  --text-dim: #55627a;
-  --accent: #818cf8;
-  --danger: #f87171;
-  --warning: #fbbf24;
-  --ok: #34d399;
+  /* Grises neutros en vez de azulados: el diagrama tiene que ser lo único
+     con color. El acento es el naranja corporativo del BCP rebajado, y el
+     secundario su azul, lo bastante apagados para no parecer una campaña. */
+  --bg: #161719;
+  --bg-panel: #1c1d20;
+  --bg-raised: #26272b;
+  --border: #34363b;
+  --border-soft: #2a2c30;
+  --text: #e7e7e9;
+  --text-muted: #9a9ca2;
+  --text-dim: #6d6f75;
+  --accent: #e07b39;
+  --accent-soft: #2f5f96;
+  --danger: #e06c6c;
+  --warning: #d9a441;
+  --ok: #4fa87a;
 
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
@@ -94,7 +98,7 @@ button {
   width: 32px;
   height: 32px;
   border-radius: 9px;
-  background: linear-gradient(140deg, #6366f1, #0ea5e9);
+  background: linear-gradient(140deg, var(--accent), var(--accent-soft));
   color: #fff;
 }
 
@@ -595,7 +599,8 @@ button {
   font-family: var(--mono);
   font-size: 10px;
   color: var(--text-muted);
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  /* Opaco, no translúcido: el trazo por detrás hacía ilegible el texto. */
+  background: var(--bg);
   border: 1px solid var(--border-soft);
   border-radius: 5px;
   pointer-events: none;
@@ -603,6 +608,7 @@ button {
   max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
+  z-index: 3;
 }
 
 .react-flow__edge.is-in-flow .edge-label {

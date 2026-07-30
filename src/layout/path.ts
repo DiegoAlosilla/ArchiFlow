@@ -97,13 +97,29 @@ export interface Route {
   points: Point[];
   /** Punto medio por longitud de arco. */
   labelAt: Point;
+  /**
+   * Punto medio desplazado perpendicularmente a la línea.
+   *
+   * Colocar la etiqueta encima del trazo la vuelve ilegible por muy opaco que
+   * sea su fondo, porque la flecha la parte en dos. Apartándola queda a un
+   * lado y se lee de corrido.
+   */
+  labelOffset: Point;
 }
+
+/** Cuánto se aparta la etiqueta del trazo. */
+const LABEL_GAP = 13;
 
 export function routeEdge(from: Point, fromSide: Side, to: Point, toSide: Side): Route {
   const points = simplify(waypoints(from, fromSide, to, toSide));
 
   if (points.length < 2) {
-    return { d: `M ${from.x},${from.y} L ${to.x},${to.y}`, points: [from, to], labelAt: from };
+    return {
+      d: `M ${from.x},${from.y} L ${to.x},${to.y}`,
+      points: [from, to],
+      labelAt: from,
+      labelOffset: { x: from.x, y: from.y - LABEL_GAP },
+    };
   }
 
   const first = points[0]!;
@@ -124,7 +140,32 @@ export function routeEdge(from: Point, fromSide: Side, to: Point, toSide: Side):
   const last = points[points.length - 1]!;
   d += ` L ${last.x.toFixed(1)},${last.y.toFixed(1)}`;
 
-  return { d, points, labelAt: midpoint(points) };
+  const labelAt = midpoint(points);
+  return { d, points, labelAt, labelOffset: offsetFromLine(points, labelAt) };
+}
+
+/**
+ * Aparta un punto de la polilínea en perpendicular al segmento que lo
+ * contiene. En un tramo vertical la etiqueta se va a la derecha; en uno
+ * horizontal, hacia arriba, que es donde la vista la busca.
+ */
+function offsetFromLine(points: Point[], at: Point): Point {
+  let segment: [Point, Point] = [points[0]!, points[1]!];
+  let best = Infinity;
+
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    const distanceToSegment = Math.abs(distance(a, at) + distance(at, b) - distance(a, b));
+    if (distanceToSegment < best) {
+      best = distanceToSegment;
+      segment = [a, b];
+    }
+  }
+
+  const [a, b] = segment;
+  const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
+  return horizontal ? { x: at.x, y: at.y - LABEL_GAP } : { x: at.x + LABEL_GAP, y: at.y };
 }
 
 function midpoint(points: Point[]): Point {

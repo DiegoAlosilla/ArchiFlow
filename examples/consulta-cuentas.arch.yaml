@@ -12,11 +12,21 @@ zones:
   - id: canales
     label: Canales
     color: '#0ea5e9'
+    layout:
+      x: 543
+      y: -31
+      width: 282
+      height: 281
 
   - id: experiencia
     label: Experiencia (BFF)
     platform: AKS-PROD-01
     color: '#6366f1'
+    layout:
+      x: 543
+      y: 329
+      width: 303
+      height: 306
 
   - id: negocio
     label: Negocio
@@ -41,6 +51,9 @@ nodes:
     zone: canales
     tech: Azure APIM
     description: Termina TLS, valida el token OAuth2 y aplica rate limiting.
+    layout:
+      x: 23
+      y: 194
 
   - id: bff-cuentas
     label: bff-cuentas
@@ -53,6 +66,9 @@ nodes:
         method: GET
         path: /v1/cuentas
         description: Devuelve las cuentas del cliente autenticado con su saldo.
+    layout:
+      x: 40
+      y: 40
 
   - id: redis-cuentas
     label: Redis Cuentas
@@ -60,6 +76,9 @@ nodes:
     zone: experiencia
     tech: Redis 7
     description: Cache-aside con TTL de 60 s sobre el listado de cuentas.
+    layout:
+      x: 58
+      y: 213
 
   - id: ms-customer
     label: ms-customer

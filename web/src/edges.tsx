@@ -69,7 +69,7 @@ export function ArchiflowEdge({ id, source, target, data }: EdgeProps) {
             className="edge-label"
             style={
               {
-                transform: `translate(-50%, -50%) translate(${route.labelAt.x}px, ${route.labelAt.y}px)`,
+                transform: `translate(-50%, -50%) translate(${route.labelOffset.x}px, ${route.labelOffset.y}px)`,
                 '--edge-color': color,
               } as React.CSSProperties
             }

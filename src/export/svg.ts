@@ -231,12 +231,15 @@ export async function toSvg(ir: Ir, options: SvgOptions = {}): Promise<string> {
 
     const clipped = truncate(text, 230, 5.6);
     const labelWidth = clipped.length * 5.6 + 12;
+    // Apartada del trazo: encima de la línea la flecha la parte en dos y deja
+    // de leerse, por muy opaco que sea el fondo.
+    const at = route.labelOffset;
     labels.push(
       `<g>` +
-        `<rect x="${(route.labelAt.x - labelWidth / 2).toFixed(1)}" y="${(route.labelAt.y - 9).toFixed(1)}" ` +
+        `<rect x="${(at.x - labelWidth / 2).toFixed(1)}" y="${(at.y - 9).toFixed(1)}" ` +
         `width="${labelWidth.toFixed(1)}" height="18" rx="5" fill="${palette.edgeLabelBg}" ` +
-        `fill-opacity="0.92" stroke="${color}" stroke-opacity="0.35" />` +
-        `<text x="${route.labelAt.x.toFixed(1)}" y="${(route.labelAt.y + 3.5).toFixed(1)}" ` +
+        `stroke="${color}" stroke-opacity="0.35" />` +
+        `<text x="${at.x.toFixed(1)}" y="${(at.y + 3.5).toFixed(1)}" ` +
         `text-anchor="middle" font-family="${MONO}" font-size="10" fill="${color}">` +
         `${escapeXml(clipped)}</text>` +
         `</g>`,

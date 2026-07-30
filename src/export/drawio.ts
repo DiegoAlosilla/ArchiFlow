@@ -70,7 +70,15 @@ function zoneStyle(color: string): string {
   ].join('');
 }
 
-/** Etiqueta multilínea de un nodo: nombre en negrita y tecnología debajo. */
+/**
+ * Etiqueta multilínea de un nodo: nombre en negrita y tecnología debajo.
+ *
+ * Devuelve HTML **sin escapar**; escaparlo es responsabilidad de quien lo
+ * inserta en el atributo `value`. mxGraph almacena el marcado escapado dentro
+ * del XML y lo interpreta al pintar porque el estilo lleva `html=1`; meterlo
+ * en crudo produce un fichero que draw.io rechaza con
+ * "Unescaped '<' not allowed in attributes values".
+ */
 function nodeLabel(node: IrNode): string {
   const lines = [`<b>${escapeXml(node.label)}</b>`];
   if (node.tech) lines.push(`<font style="font-size:10px;color:#64748b">${escapeXml(node.tech)}</font>`);
@@ -82,6 +90,11 @@ function nodeLabel(node: IrNode): string {
     );
   }
   return lines.join('<br/>');
+}
+
+/** Une varias líneas de texto plano en una etiqueta HTML de mxGraph. */
+function multilineLabel(lines: string[]): string {
+  return lines.map(escapeXml).join('<br/>');
 }
 
 interface PageOptions {
@@ -111,7 +124,7 @@ function renderPage(ir: Ir, boxes: Map<string, Box>, zoneBoxes: Box[], options: 
     const dimmed = activeNodes !== null && !activeNodes.has(node.id);
     const parent = node.zone ? cellId('zone', node.zone) : '1';
     cells.push(
-      `<mxCell id="${cellId('n', node.id)}" value="${nodeLabel(node)}" style="${nodeStyle(node, dimmed)}" vertex="1" parent="${parent}">` +
+      `<mxCell id="${cellId('n', node.id)}" value="${escapeXml(nodeLabel(node))}" style="${nodeStyle(node, dimmed)}" vertex="1" parent="${parent}">` +
         `<mxGeometry x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" as="geometry" /></mxCell>`,
     );
   }
@@ -131,9 +144,9 @@ function renderPage(ir: Ir, boxes: Map<string, Box>, zoneBoxes: Box[], options: 
   for (const edge of ir.edges) {
     const inFlow = flow ? stepLabels.has(edge.id) : true;
     if (flow && !inFlow) continue; // en una página de flujo, fuera el ruido
-    const label = flow ? (stepLabels.get(edge.id) ?? []).join('<br/>') : edge.labels.join('<br/>');
+    const lines = flow ? (stepLabels.get(edge.id) ?? []) : edge.labels;
     cells.push(
-      `<mxCell id="${cellId('e', edge.id)}" value="${escapeXml(label).replace(/&lt;br\/&gt;/g, '<br/>')}" style="${edgeStyle(edge, false)}" edge="1" parent="1" source="${cellId('n', edge.source)}" target="${cellId('n', edge.target)}">` +
+      `<mxCell id="${cellId('e', edge.id)}" value="${escapeXml(multilineLabel(lines))}" style="${edgeStyle(edge, false)}" edge="1" parent="1" source="${cellId('n', edge.source)}" target="${cellId('n', edge.target)}">` +
         '<mxGeometry relative="1" as="geometry" /></mxCell>',
     );
   }

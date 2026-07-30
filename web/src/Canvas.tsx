@@ -22,6 +22,7 @@ import { nodeTypes } from './nodes';
 import { edgeTypes } from './edges';
 import { FlowPackets } from './packets';
 import { measurer } from './edgeRegistry';
+import { clock } from './playback';
 import type { Selection } from './selection';
 
 interface Props {
@@ -145,6 +146,9 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
     [],
   );
 
+  // Con el diagrama moviéndose bajo el ratón, la animación estorba.
+  const onNodeDragStart = useCallback<OnNodeDrag>(() => clock.pause(), []);
+
   /** Al soltar un nodo se fija su posición en el YAML. */
   const onNodeDragStop = useCallback<OnNodeDrag>(
     (_event, node) => {
@@ -194,6 +198,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
+        onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
         onNodeClick={(_event, node) =>
@@ -216,7 +221,10 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         maxZoom={2.5}
         fitView
       >
-        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#1e293b" />
+        {/* Cuadrícula en dos niveles: la fina para alinear al arrastrar, la
+            gruesa para dar escala sin saturar la vista. */}
+        <Background id="fina" variant={BackgroundVariant.Lines} gap={20} lineWidth={1} color="#232427" />
+        <Background id="gruesa" variant={BackgroundVariant.Lines} gap={100} lineWidth={1} color="#2c2e32" />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable nodeStrokeWidth={2} maskColor="rgba(2,6,23,0.7)" />
         <FlowPackets flow={flow} onStepChange={onStepChange} />
