@@ -24,6 +24,8 @@ export interface DiagramEntry {
 export interface DiagramsPayload {
   root: string;
   diagrams: DiagramEntry[];
+  /** Historial volátil de la sesión del servidor, por fichero. */
+  history: Record<string, { canUndo: boolean; canRedo: boolean }>;
   /** Marca de tiempo de la última recarga, para mostrar "actualizado hace X". */
   updatedAt: number;
 }

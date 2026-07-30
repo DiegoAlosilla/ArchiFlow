@@ -21,6 +21,8 @@ export interface MutationClient {
   error: string | null;
   dismissError: () => void;
   saving: boolean;
+  undo: () => Promise<boolean>;
+  redo: () => Promise<boolean>;
 }
 
 export function useMutations(entry: DiagramEntry | null): MutationClient {
@@ -88,5 +90,16 @@ export function useMutations(entry: DiagramEntry | null): MutationClient {
     [entry],
   );
 
-  return { mutate, error, dismissError: () => setError(null), saving };
+  const history = useCallback(async (action: 'undo' | 'redo') => {
+    if (!entry) return false;
+    try {
+      const response = await fetch(`/api/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: entry.id }) });
+      const result = (await response.json()) as MutateResponse;
+      if (result.ok && result.revision) { revision.current = result.revision; setError(null); return true; }
+      setError(result.error ?? `No se pudo ${action === 'undo' ? 'deshacer' : 'rehacer'}`);
+    } catch (cause) { setError(`No se pudo actualizar el historial: ${(cause as Error).message}`); }
+    return false;
+  }, [entry]);
+
+  return { mutate, error, dismissError: () => setError(null), saving, undo: () => history('undo'), redo: () => history('redo') };
 }

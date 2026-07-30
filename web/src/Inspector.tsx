@@ -58,18 +58,7 @@ function NodeInspector({ ir, selection, onSelect, mutate }: Props) {
         <button
           type="button"
           className="inspector__delete"
-          onClick={() => {
-            const steps = ir.flows.reduce(
-              (total, flow) => total + flow.steps.filter((step) => step.from === node.id || step.to === node.id).length,
-              0,
-            );
-            const warning =
-              steps > 0
-                ? `Se borrará "${node.label}" y los ${steps} paso(s) que lo usan. ¿Continuar?`
-                : `¿Borrar "${node.label}"?`;
-            if (!confirm(warning)) return;
-            void mutate({ op: 'node.remove', id: node.id }).then((ok) => ok && onSelect(null));
-          }}
+          onClick={() => void mutate({ op: 'node.remove', id: node.id }).then((ok) => ok && onSelect(null))}
         >
           Borrar
         </button>
@@ -173,10 +162,7 @@ function ZoneInspector({ ir, selection, onSelect, mutate }: Props) {
         <button
           type="button"
           className="inspector__delete"
-          onClick={() => {
-            if (!confirm(`¿Borrar la zona "${zone.label}"? Sus ${zone.nodeIds.length} nodo(s) quedarán sueltos.`)) return;
-            void mutate({ op: 'zone.remove', id: zone.id }).then((ok) => ok && onSelect(null));
-          }}
+          onClick={() => void mutate({ op: 'zone.remove', id: zone.id }).then((ok) => ok && onSelect(null))}
         >
           Borrar
         </button>
@@ -233,10 +219,7 @@ function FlowInspector({ ir, selection, onSelect, mutate }: Props) {
         <button
           type="button"
           className="inspector__delete"
-          onClick={() => {
-            if (!confirm(`¿Borrar el flujo "${flow.label}" y sus ${flow.steps.length} paso(s)?`)) return;
-            void mutate({ op: 'flow.remove', id: flow.id }).then((ok) => ok && onSelect(null));
-          }}
+          onClick={() => void mutate({ op: 'flow.remove', id: flow.id }).then((ok) => ok && onSelect(null))}
         >
           Borrar
         </button>

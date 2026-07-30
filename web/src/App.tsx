@@ -39,7 +39,8 @@ export default function App() {
     if (selectedDiagram && selectedDiagram.id !== diagramId) setDiagramId(selectedDiagram.id);
   }, [selectedDiagram, diagramId]);
 
-  const { mutate, error, dismissError, saving } = useMutations(selectedDiagram);
+  const { mutate, error, dismissError, saving, undo, redo } = useMutations(selectedDiagram);
+  const history = selectedDiagram ? payload?.history[selectedDiagram.id] : undefined;
 
   const ir: Ir | null = selectedDiagram?.ir ?? null;
   const flows = ir?.flows ?? [];
@@ -86,6 +87,22 @@ export default function App() {
     );
   };
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); void (event.shiftKey ? redo() : undo()); }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') { event.preventDefault(); void redo(); }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selection) {
+        event.preventDefault();
+        if (selection.kind === 'node') void mutate({ op: 'node.remove', id: selection.id }).then((ok) => ok && setSelection(null));
+        if (selection.kind === 'zone') void mutate({ op: 'zone.remove', id: selection.id }).then((ok) => ok && setSelection(null));
+        if (selection.kind === 'step') void mutate({ op: 'step.remove', flowId: selection.flowId, index: selection.index }).then((ok) => ok && setSelection(null));
+      }
+    };
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
+  }, [mutate, redo, selection, undo]);
+
   return (
     <div className="app">
       <header className="topbar">
@@ -116,6 +133,8 @@ export default function App() {
             <button type="button" className="tool" onClick={addZone}>
               + Zona
             </button>
+            <button type="button" className="tool" onClick={() => void undo()} disabled={!history?.canUndo} aria-label="Deshacer">↶</button>
+            <button type="button" className="tool" onClick={() => void redo()} disabled={!history?.canRedo} aria-label="Rehacer">↷</button>
             <span className="topbar__divider" />
             <ExportMenu ir={ir} flowId={selectedFlow?.id} fileName={selectedDiagram?.file ?? 'diagrama'} />
           </div>
