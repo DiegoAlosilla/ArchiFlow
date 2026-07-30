@@ -34,9 +34,6 @@ nodes:
     kind: client
     zone: canales
     tech: iOS / Android
-    layout:
-      x: 22
-      y: 34
 
   - id: apigw
     label: API Gateway
@@ -63,9 +60,6 @@ nodes:
     zone: experiencia
     tech: Redis 7
     description: Cache-aside con TTL de 60 s sobre el listado de cuentas.
-    layout:
-      x: 61
-      y: 161
 
   - id: ms-customer
     label: ms-customer
@@ -123,6 +117,11 @@ flows:
     trigger: El usuario abre la pantalla "Mis cuentas"
     entry: app-movil
     steps:
+      - from: app-movil
+        to: apigw
+        op: GET /v1/cuentas
+        protocol: https
+        latencyMs: 40
 
       - from: apigw
         to: bff-cuentas
@@ -163,11 +162,6 @@ flows:
         protocol: soap
         latencyMs: 220
         note: Es el cuello de botella del flujo.
-      - from: app-movil
-        to: apigw
-        op: GET /v1/cuentas
-        protocol: https
-        latencyMs: 40
 
       - from: bff-cuentas
         to: kafka
