@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
-import type { IrFlow } from '@archiflow/schema';
+import type { AnimationSettings, IrFlow } from '@archiflow/schema';
 import { clock } from './playback';
 import { protocolColor } from './kinds';
 
@@ -15,7 +15,14 @@ function formatTime(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function Timeline({ flow }: { flow: IrFlow | null }) {
+interface Props {
+  flow: IrFlow | null;
+  animation: AnimationSettings | null;
+  /** Solo para la sesión: lo que manda de verdad es la clave `animation:`. */
+  onAnimationChange: (settings: AnimationSettings) => void;
+}
+
+export function Timeline({ flow, animation, onAnimationChange }: Props) {
   const state = useSyncExternalStore(clock.subscribeState, clock.getState);
   const trackRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -177,6 +184,40 @@ export function Timeline({ flow }: { flow: IrFlow | null }) {
           />
           Bucle
         </label>
+
+        {animation && (
+          <>
+            <span className="timeline__separator">·</span>
+
+            <label className="timeline__loop" title="Todas las flechas con puntos a la vez, en vez de un paso cada vez">
+              <input
+                type="checkbox"
+                checked={animation.mode === 'continuo'}
+                onChange={(event) =>
+                  onAnimationChange({ ...animation, mode: event.target.checked ? 'continuo' : 'paso' })
+                }
+              />
+              Continuo
+            </label>
+
+            {animation.mode === 'continuo' && (
+              <select
+                className="timeline__speed"
+                value={animation.packetsPerEdge}
+                onChange={(event) =>
+                  onAnimationChange({ ...animation, packetsPerEdge: Number(event.target.value) })
+                }
+                aria-label="Puntos por flecha"
+              >
+                {[1, 2, 3, 4, 5, 6].map((count) => (
+                  <option key={count} value={count}>
+                    {count} ●
+                  </option>
+                ))}
+              </select>
+            )}
+          </>
+        )}
       </div>
     </footer>
   );

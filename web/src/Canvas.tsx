@@ -15,7 +15,7 @@ import {
   type OnNodeDrag,
 } from '@xyflow/react';
 import { applyLayoutOverrides, computeBaseLayout, layoutSignature, type LaidOutGraph } from '@archiflow/layout';
-import type { Ir, IrFlow } from '@archiflow/schema';
+import type { AnimationSettings, Ir, IrFlow } from '@archiflow/schema';
 import type { Mutation } from '@archiflow/shared';
 import { toReactFlow, type EdgeData } from './layout';
 import { nodeTypes } from './nodes';
@@ -25,6 +25,14 @@ import { measurer } from './edgeRegistry';
 import { clock } from './playback';
 import type { Selection } from './selection';
 
+/**
+ * Encuadre inicial. El `minZoom` es lo que evita que un diagrama grande entre
+ * entero pero ilegible: por debajo de la mitad, el nombre de un servicio deja
+ * de leerse y lo que se ve es un mapa de cajas de colores. Mejor entrar cerca y
+ * que el usuario se aleje si quiere.
+ */
+const FIT_VIEW = { padding: 0.14, duration: 400, minZoom: 0.5, maxZoom: 1.1 };
+
 interface Props {
   ir: Ir;
   flow: IrFlow | null;
@@ -33,9 +41,10 @@ interface Props {
   onSelect: (selection: Selection) => void;
   onStepChange: (index: number) => void;
   mutate: (...mutations: Mutation[]) => Promise<boolean>;
+  animation: AnimationSettings;
 }
 
-function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mutate }: Props) {
+function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mutate, animation }: Props) {
   const [base, setBase] = useState<LaidOutGraph | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const { fitView } = useReactFlow();
@@ -127,7 +136,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
     // la cámara bajo el ratón mientras se edita.
     if (lastDiagram.current !== ir.meta.name) {
       lastDiagram.current = ir.meta.name;
-      requestAnimationFrame(() => fitView({ padding: 0.14, duration: 400 }));
+      requestAnimationFrame(() => fitView(FIT_VIEW));
     }
   }, [computed, decorate, fitView, ir.meta.name]);
 
@@ -221,6 +230,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         minZoom={0.15}
         maxZoom={2.5}
         fitView
+        fitViewOptions={FIT_VIEW}
       >
         {/* Cuadrícula en dos niveles: la fina para alinear al arrastrar, la
             gruesa para dar escala sin saturar la vista. */}
@@ -228,7 +238,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         <Background id="gruesa" variant={BackgroundVariant.Lines} gap={100} lineWidth={1} color="#2c2e32" />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable nodeStrokeWidth={2} maskColor="rgba(2,6,23,0.7)" />
-        <FlowPackets flow={flow} onStepChange={onStepChange} />
+        <FlowPackets flow={flow} animation={animation} onStepChange={onStepChange} />
         {selectedStep && (selectedStep.request || selectedStep.response) && (
           <div className="contract-panel">
             {selectedStep.request && <details open><summary>Request</summary><pre>{selectedStep.request}</pre></details>}

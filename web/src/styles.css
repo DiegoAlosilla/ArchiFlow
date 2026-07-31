@@ -669,6 +669,12 @@ button {
   border-radius: 3px;
 }
 
+/* La estela no lleva halo: multiplicar la sombra por cada punto llena el
+   lienzo de niebla y el trazo deja de leerse. */
+.packet--trail {
+  box-shadow: none;
+}
+
 /* ── Línea de tiempo ────────────────────────────────────────── */
 
 .timeline {
