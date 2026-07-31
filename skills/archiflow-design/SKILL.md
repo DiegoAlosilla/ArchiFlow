@@ -87,7 +87,22 @@ flows:
 
 La flecha sigue yendo de servicio a servicio: la operación solo afina la etiqueta y el punto de llegada.
 
-### 4. Escribir y validar
+### 4. Ajustar la animación, solo si aporta
+
+Por omisión la animación va en modo `paso`: un punto por paso, en secuencia. **Déjalo así casi siempre**, porque es lo que hace legible el orden del recorrido.
+
+Añade la clave `animation:` solo cuando el usuario pida otra cosa: un diagrama para una pantalla de sala o para un GIF corto se ve mejor en modo continuo, con todas las flechas con tráfico a la vez.
+
+```yaml
+animation:
+  mode: continuo      # paso (por omisión) | continuo
+  packetsPerEdge: 3   # puntos en vuelo por flecha
+  trail: 3            # estela; 0 la quita
+  direction: normal   # normal | inversa | alterna
+  cycleMs: 1800       # lo que tarda un punto en recorrer una flecha
+```
+
+### 5. Escribir y validar
 
 Escribe el fichero como `<nombre>.arch.yaml` y **valídalo siempre**:
 

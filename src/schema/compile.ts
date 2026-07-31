@@ -1,4 +1,11 @@
-import type { Diagram, LayoutOverride, NodeKind, Operation, Protocol } from './schema.js';
+import type {
+  AnimationSettings,
+  Diagram,
+  LayoutOverride,
+  NodeKind,
+  Operation,
+  Protocol,
+} from './schema.js';
 
 /**
  * Compilación de `.arch.yaml` al IR que consume el renderer.
@@ -95,6 +102,7 @@ export interface Ir {
     owner?: string;
     updated?: string;
   };
+  animation: AnimationSettings;
   zones: IrZone[];
   nodes: IrNode[];
   edges: IrEdge[];
@@ -297,6 +305,7 @@ export function compile(diagram: Diagram): Ir {
       owner: diagram.owner,
       updated: diagram.updated,
     },
+    animation: diagram.animation,
     zones,
     nodes,
     edges: [...edges.values()],

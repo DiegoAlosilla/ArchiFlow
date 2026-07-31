@@ -11,6 +11,7 @@ import { toJson } from '../export/json.js';
 import { toMermaid } from '../export/mermaid.js';
 import { toSvg } from '../export/svg.js';
 import { toArchimate } from '../export/archimate.js';
+import { importDiagram, toDraft } from '../import/index.js';
 import { loadAllDiagrams } from './loader.js';
 import { serve } from './server.js';
 
@@ -160,6 +161,69 @@ cli
       }
     },
   );
+
+cli
+  .command('import <file>', 'Importa un .drawio o un ArchiMate a un .arch.yaml borrador')
+  .option('-o, --out <file>', 'Fichero de salida')
+  .option('--evidence', 'Escribe las evidencias en JSON en vez del borrador', { default: false })
+  .option('--name <name>', 'Nombre del diagrama')
+  .action(async (file: string, options: { out?: string; evidence: boolean; name?: string }) => {
+    const input = path.resolve(process.cwd(), file);
+    const source = await readFile(input, 'utf8');
+
+    let evidence;
+    try {
+      evidence = importDiagram(source);
+    } catch (error) {
+      console.log(pc.red(`No se pudo importar: ${(error as Error).message}`));
+      process.exitCode = 1;
+      return;
+    }
+
+    // Las evidencias son la entrada de la skill de importación: ahí el modelo
+    // decide tipos, zonas y orden con el criterio que un parser no tiene.
+    if (options.evidence) {
+      const json = `${JSON.stringify(evidence, null, 2)}\n`;
+      if (options.out) {
+        const output = path.resolve(process.cwd(), options.out);
+        await writeFile(output, json, 'utf8');
+        console.log(`${pc.green('✓')} ${path.relative(process.cwd(), output)}`);
+      } else {
+        console.log(json);
+      }
+      return;
+    }
+
+    const draft = toDraft(evidence, { name: options.name });
+    const output = options.out
+      ? path.resolve(process.cwd(), options.out)
+      : input.replace(/\.[^.]+$/, '') + '.arch.yaml';
+    await writeFile(output, draft.yaml, 'utf8');
+
+    const { diagram, issues } = parseDiagram(draft.yaml);
+    console.log(`${pc.green('✓')} ${path.relative(process.cwd(), output)}`);
+    console.log(
+      pc.dim(
+        `  ${evidence.shapes.filter((shape) => !shape.container).length} caja(s) · ` +
+          `${evidence.shapes.filter((shape) => shape.container).length} contenedor(es) · ` +
+          `${evidence.links.length} flecha(s)`,
+      ),
+    );
+
+    // Es un borrador y hay que decirlo, no insinuarlo: lo deducido se enumera
+    // aquí y además va en la cabecera del fichero.
+    console.log();
+    console.log(pc.yellow('  Es un BORRADOR. Lo que se ha deducido:'));
+    for (const warning of draft.warnings.slice(0, 10)) console.log(`    ${pc.dim('·')} ${warning}`);
+    if (draft.warnings.length > 10) console.log(pc.dim(`    … y ${draft.warnings.length - 10} más`));
+    console.log();
+
+    if (!diagram) {
+      printIssues(path.basename(output), issues);
+      console.log(pc.red('  El borrador no valida: arréglalo a mano o usa la skill de importación.'));
+      process.exitCode = 1;
+    }
+  });
 
 cli
   .command('scan [repo]', 'Recolecta evidencias de un microservicio Quarkus o Spring Boot')

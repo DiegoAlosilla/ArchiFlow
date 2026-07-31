@@ -1,0 +1,107 @@
+---
+name: archiflow-import
+description: Convierte un diagrama existente de draw.io (.drawio / .xml de mxGraph) o de ArchiMate (Open Exchange) en un diagrama animado de ArchiFlow (.arch.yaml). Úsala cuando el usuario diga "importa este diagrama", "tengo esto en draw.io", "pásame este .drawio a ArchiFlow", "migra el diagrama de Archi", o adjunte un fichero .drawio, .vsdx exportado a XML o un XML de ArchiMate.
+---
+
+# ArchiFlow: importar un diagrama existente
+
+Convierte un `.drawio` o un ArchiMate Open Exchange en un `.arch.yaml` animado.
+
+## El principio que rige esta skill
+
+**El importador demuestra, tú interpretas.**
+
+`archiflow import` extrae solo lo que el fichero contiene de verdad: cajas, geometría, estilos, etiquetas y flechas. Lo que **no** contiene, y por tanto nadie puede extraer, es lo que más importa en ArchiFlow:
+
+1. **Qué es cada caja.** Un rectángulo azul con "ms-saldos" dentro es un microservicio para ti y una figura geométrica para el fichero. El importador propone un tipo por forma y por texto, y **dice de dónde lo saca**; tú lo confirmas o lo corriges.
+2. **En qué orden ocurren los pasos.** Un diagrama dibujado es un grafo; un flujo de ArchiFlow es una secuencia. Si quien lo dibujó numeró las flechas (`1.1`, `2.`, …), el orden está ahí. Si no, hay que deducirlo leyendo el diagrama, y es la parte donde más se equivoca un algoritmo y menos un lector.
+
+Y hay un límite que **debes comunicar siempre**: reconstruir semántica a partir de geometría se acierta mucho y se falla algo. El resultado es **un borrador**, igual que el del escaneo de código. Presentarlo como una traducción exacta destruye la confianza a la primera caja mal tipada.
+
+## Procedimiento
+
+### 1. Sacar las evidencias
+
+```bash
+npx archiflow import <fichero> --evidence -o evidencias.json
+```
+
+No leas el `.drawio` a pelo: draw.io guarda el modelo **comprimido** (base64 de un deflate crudo, además URL-encoded), así que lo que verías es una línea ilegible. El comando lo descomprime por ti. Salida:
+
+```jsonc
+{
+  "format": "drawio",
+  "pages":  [ { "id", "name", "shapes": [...] } ],
+  "shapes": [ { "id", "label", "style", "x", "y", "width", "height",
+                "parent", "container", "kind", "confidence", "reason", "external" } ],
+  "links":  [ { "id", "label", "source", "target", "style", "protocol", "async", "order" } ],
+  "warnings": [ ... ]
+}
+```
+
+- `style` es el estilo crudo de mxGraph. Es **la prueba**: si `kind` no te cuadra, mira ahí antes de cambiarlo.
+- `confidence` es `alta` (la forma lo dice), `media` (lo dice el texto) o `baja` (no lo dice nadie y se asumió `service`).
+- `container: true` es un carril, un grupo o una caja que envuelve a otras: candidato a zona.
+- `order` es la numeración que traía la flecha en su etiqueta, si traía.
+
+### 2. Leer los avisos antes que nada
+
+Como en el escaneo, `warnings` es la parte más informativa. Ahí verás lo que se descartó —capturas de pantalla, maquetas, rótulos sueltos— y las flechas que se cayeron con ellos. Si el usuario esperaba ver esas pantallas en el diagrama, **díselo**: ArchiFlow modela topología y recorridos, no maquetas de interfaz.
+
+### 3. Decidir los tipos
+
+Repasa toda forma con `confidence` distinta de `alta`. Pistas que el importador no usa y tú sí:
+
+- **El nombre del sistema en el banco.** `ms-`, `bff-`, `api-` son convenciones del equipo, no del dibujo.
+- **Con qué se conecta.** Lo que solo recibe flechas de servicios y no sale a ningún sitio suele ser un almacén. Lo que recibe de todos y llama a todos suele ser un gateway o un broker.
+- **El color.** En un diagrama hecho por un equipo, el color casi siempre codifica algo (capa, criticidad, propiedad). Pregúntalo si no es evidente: acierta más que cualquier heurística.
+
+### 4. Decidir las zonas
+
+Cada `container` es una zona candidata. Si el diagrama no tiene carriles, agrupa por capa mirando las posiciones: los diagramas de banca se leen de arriba abajo (`canales` → `experiencia` → `negocio` → `datos`) o de izquierda a derecha. **Di explícitamente que las zonas las has agrupado tú** para que el usuario las corrija.
+
+### 5. Reconstruir el orden de los pasos — la parte que importa
+
+Por prioridad:
+
+1. **Numeración en las etiquetas.** Si la hay, es la respuesta y no hay que darle más vueltas.
+2. **Un solo camino.** Si el grafo es una cadena, el orden es el recorrido desde la entrada.
+3. **Lectura del dibujo.** De arriba abajo y de izquierda a derecha, empezando por quien no recibe ninguna flecha.
+4. **Preguntar.** Si hay ramas —caché y fallo de caché, síncrono y evento— **haz un flujo por rama** en vez de forzar una secuencia única, que es justo lo que ArchiFlow hace mejor que draw.io.
+
+Un diagrama grande casi nunca es un solo flujo. Si ves 40 flechas, casi seguro son tres o cuatro escenarios superpuestos: sepáralos y nómbralos.
+
+### 6. Escribir y validar
+
+Escribe el `.arch.yaml` con lo que hayas decidido —no te limites a mover el borrador— y valídalo:
+
+```bash
+npx archiflow validate <directorio>
+npx archiflow serve <directorio>
+```
+
+Si quieres partir del borrador en vez de escribirlo entero:
+
+```bash
+npx archiflow import <fichero> -o mi-diagrama.arch.yaml
+```
+
+Sale con una cabecera de comentarios que enumera todo lo deducido. **Bórrala cuando hayas revisado el contenido**: dejarla puesta hace que el aviso pierda su sentido.
+
+### 7. Entregar con honestidad
+
+Al presentar el resultado di explícitamente:
+
+- Qué salió del fichero tal cual (cajas, flechas, carriles).
+- Qué has deducido tú (tipos, zonas, y sobre todo **el orden de los pasos**).
+- Qué se descartó y por qué (imágenes, rótulos, flechas sueltas).
+- Qué falta y solo el usuario sabe: latencias, condiciones de cada rama, y qué operación concreta viaja en cada flecha.
+
+## Lo que no viaja
+
+Ni lo intentes, y dilo si el usuario lo espera:
+
+- **Capturas y maquetas**: no hay equivalente en el modelo.
+- **Estilos, colores y fuentes**: ArchiFlow tiene su propio tema, a propósito.
+- **Posiciones exactas**: el auto-layout recoloca. Si el usuario quiere conservar una disposición concreta, se fija después arrastrando, y eso escribe `layout` en el YAML.
+- **Del ArchiMate, el orden de los pasos**: el formato no lo guarda. Todo lo demás (tipos, zonas por Grouping, síncrono contra asíncrono) sí llega bien, porque ahí el fichero sí trae semántica.

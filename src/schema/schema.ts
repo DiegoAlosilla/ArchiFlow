@@ -213,6 +213,37 @@ export const EdgeSchema = z
   .strict();
 export type DeclaredEdge = z.infer<typeof EdgeSchema>;
 
+/**
+ * Ajustes de animación del diagrama.
+ *
+ * Van en el fichero y no en la interfaz porque son parte de cómo se cuenta el
+ * diagrama: un flujo de latencias que se explica en una reunión no se anima
+ * igual que un panel que vive en una pantalla. Los controles de la web parten
+ * de aquí y lo que se toque ahí es solo para la sesión.
+ */
+export const AnimationSchema = z
+  .object({
+    /**
+     * `paso`: un paquete por paso, en secuencia — es lo que hace legible un
+     * recorrido y sigue siendo el modo por omisión.
+     * `continuo`: todas las aristas del flujo con puntos a la vez, que es lo
+     * que da sensación de tráfico y funciona mejor en una pantalla de sala.
+     */
+    mode: z.enum(['paso', 'continuo']).default('paso'),
+    /** Multiplicador de velocidad de partida. */
+    speed: z.number().positive().max(8).default(1),
+    /** Paquetes en vuelo por arista en modo continuo. */
+    packetsPerEdge: z.number().int().min(1).max(8).default(3),
+    /** Puntos de estela detrás de cada paquete. 0 lo desactiva. */
+    trail: z.number().int().min(0).max(8).default(3),
+    /** Sentido del recorrido: contra la flecha, o alternando en cada vuelta. */
+    direction: z.enum(['normal', 'inversa', 'alterna']).default('normal'),
+    /** Segundos que tarda un paquete en recorrer una arista en modo continuo. */
+    cycleMs: z.number().positive().max(20_000).default(1800),
+  })
+  .strict();
+export type AnimationSettings = z.infer<typeof AnimationSchema>;
+
 export const DiagramSchema = z
   .object({
     /** Versión del formato. Permite migrar sin romper ficheros existentes. */
@@ -223,6 +254,7 @@ export const DiagramSchema = z
     owner: z.string().optional(),
     /** Fecha de última revisión humana, en ISO. */
     updated: z.string().optional(),
+    animation: AnimationSchema.default({}),
     zones: z.array(ZoneSchema).default([]),
     nodes: z.array(NodeSchema).min(1, 'un diagrama necesita al menos un nodo'),
     edges: z.array(EdgeSchema).default([]),

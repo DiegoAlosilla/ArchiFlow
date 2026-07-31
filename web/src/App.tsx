@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Ir, IrFlow } from '@archiflow/schema';
+import { AnimationSchema, type AnimationSettings, type Ir, type IrFlow } from '@archiflow/schema';
 import { useDiagrams } from './useDiagrams';
 import { useMutations } from './useMutations';
 import { Canvas } from './Canvas';
@@ -9,6 +9,9 @@ import { ExportMenu } from './ExportMenu';
 import { Timeline } from './Timeline';
 import { clock } from './playback';
 import type { Selection } from './selection';
+
+/** Los valores de serie salen del esquema, para no tenerlos en dos sitios. */
+const DEFAULT_ANIMATION = AnimationSchema.parse({});
 
 export default function App() {
   const { payload, connection } = useDiagrams();
@@ -67,6 +70,23 @@ export default function App() {
     clock.seek(0);
     clock.play();
   }, [selectedFlow]);
+
+  /**
+   * Ajustes de animación: el fichero manda y la barra inferior los cambia solo
+   * para la sesión. Cambiar el YAML por mover un control escribiría en disco a
+   * cada clic, y probar cómo se ve algo no debería ensuciar un diff.
+   */
+  const [animation, setAnimation] = useState<AnimationSettings | null>(null);
+  useEffect(() => {
+    if (!ir) return;
+    // El `??` cubre un payload servido por un CLI más viejo que la web, que es
+    // lo que pasa en desarrollo con el servidor levantado desde antes: sin él,
+    // leer `.speed` de undefined deja la página en blanco.
+    const next = ir.animation ?? DEFAULT_ANIMATION;
+    setAnimation(next);
+    clock.setSpeed(next.speed);
+  }, [ir?.animation, selectedDiagram?.id]);
+  const settings = animation ?? ir?.animation ?? DEFAULT_ANIMATION;
 
   const handleStepChange = useCallback((index: number) => setCurrentStep(index), []);
 
@@ -184,6 +204,7 @@ export default function App() {
                 onSelect={setSelection}
                 onStepChange={handleStepChange}
                 mutate={mutate}
+                animation={settings}
               />
             ) : (
               <div className="canvas canvas--error">
@@ -191,7 +212,7 @@ export default function App() {
                 <p>Revisa los errores de validación en el panel lateral.</p>
               </div>
             )}
-            <Timeline flow={selectedFlow} />
+            <Timeline flow={selectedFlow} animation={settings} onAnimationChange={setAnimation} />
           </main>
 
           {editing && ir && (

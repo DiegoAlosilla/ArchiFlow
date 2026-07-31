@@ -1,6 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ViewportPortal } from '@xyflow/react';
-import type { IrFlow } from '@archiflow/schema';
+import type { AnimationSettings, IrFlow } from '@archiflow/schema';
+import {
+  ARRIVAL_THRESHOLD,
+  buildDots,
+  dotFade,
+  dotProgress,
+  type AnimationDot,
+} from '@archiflow/animation';
 import { clock } from './playback';
 import { getEdgePath, measurer } from './edgeRegistry';
 import { protocolColor } from './kinds';
@@ -11,23 +18,36 @@ import { protocolColor } from './kinds';
  * Todo el trabajo por frame es imperativo (transform del paquete, clases en
  * nodos y aristas). React solo se entera del cambio de paso activo, que ocurre
  * una vez por segundo como mucho.
+ *
+ * Hay dos modos, y la diferencia no es estética:
+ *
+ * - **paso**: un punto por paso, en secuencia. Es el que hace legible un
+ *   recorrido —se ve qué pasa antes y qué después— y sigue siendo el de serie.
+ * - **continuo**: todas las aristas del flujo con varios puntos a la vez. Se
+ *   pierde el orden y se gana la sensación de tráfico, que es lo que se quiere
+ *   en una pantalla de sala o en un GIF de tres segundos.
+ *
+ * En los dos modos el reloj sigue siendo el mismo y la línea de tiempo sigue
+ * marcando el paso activo: el modo continuo cambia lo que se dibuja, no lo que
+ * se está contando.
  */
 
 interface Props {
   flow: IrFlow | null;
+  animation: AnimationSettings;
   onStepChange: (index: number) => void;
 }
 
 /** Ventana tras la llegada durante la que el nodo destino queda resaltado. */
 const NODE_PULSE_MS = 420;
-/** Fracción del trayecto a partir de la cual se considera que "está llegando". */
-const ARRIVAL_THRESHOLD = 0.9;
 
-export function FlowPackets({ flow, onStepChange }: Props) {
-  const packetRefs = useRef<Array<HTMLDivElement | null>>([]);
+export function FlowPackets({ flow, animation, onStepChange }: Props) {
+  const dotRefs = useRef<Array<HTMLDivElement | null>>([]);
   const hotNodes = useRef(new Set<string>());
   const firingEdges = useRef(new Set<string>());
   const lastStep = useRef(-1);
+
+  const dots = useMemo(() => (flow ? buildDots(flow, animation) : []), [flow, animation]);
 
   useEffect(() => {
     // El layout cambió: las longitudes de path cacheadas ya no valen.
@@ -57,38 +77,55 @@ export function FlowPackets({ flow, onStepChange }: Props) {
       return edgeElements.get(id) ?? null;
     };
 
+    const place = (dot: AnimationDot, index: number, progress: number | null) => {
+      const element = dotRefs.current[index];
+      if (!element) return;
+
+      if (progress === null) {
+        if (element.style.visibility !== 'hidden') {
+          element.style.visibility = 'hidden';
+          element.style.opacity = '0';
+        }
+        return;
+      }
+
+      const d = getEdgePath(dot.edgeId);
+      if (!d) return;
+      const { x, y } = measurer.pointAt(d, progress);
+      const { opacity, scale } = dotFade(dot, animation);
+      element.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%) scale(${scale.toFixed(2)})`;
+      element.style.visibility = 'visible';
+      element.style.opacity = String(opacity);
+    };
+
     const render = (timeMs: number) => {
       const nextHotNodes = new Set<string>();
       const nextFiringEdges = new Set<string>();
       let activeIndex = -1;
 
+      // El paso activo se calcula siempre: la línea de tiempo y la lista de
+      // pasos siguen contando el recorrido aunque los puntos vayan sueltos.
       flow.steps.forEach((step, i) => {
-        const element = packetRefs.current[i];
-        if (!element) return;
-
-        const elapsed = timeMs - step.startMs;
-        const progress = elapsed / step.durationMs;
-
         if (timeMs >= step.startMs) activeIndex = i;
+      });
 
-        if (progress < 0 || progress > 1) {
-          if (element.style.opacity !== '0') {
-            element.style.opacity = '0';
-            element.style.visibility = 'hidden';
-          }
-        } else {
-          const d = getEdgePath(step.edgeId);
-          if (d) {
-            const { x, y } = measurer.pointAt(d, progress);
-            element.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
-            element.style.visibility = 'visible';
-            // Entrada y salida suaves para que no aparezca de golpe en el nodo.
-            element.style.opacity = String(Math.min(1, Math.min(progress, 1 - progress) * 8 + 0.25));
-          }
-          nextFiringEdges.add(step.edgeId);
-          if (progress >= ARRIVAL_THRESHOLD) nextHotNodes.add(step.to);
+      dots.forEach((dot, index) => {
+        const progress = dotProgress(dot, flow, animation, timeMs);
+        place(dot, index, progress);
+        if (dot.trailIndex !== 0) return;
+
+        if (progress !== null) {
+          nextFiringEdges.add(dot.edgeId);
+          if (progress >= ARRIVAL_THRESHOLD) nextHotNodes.add(dot.to);
         }
 
+        // El pulso de los nodos solo tiene sentido en modo paso: en continuo
+        // todo está llegando a todo y encender la mitad del diagrama a la vez
+        // no señala nada.
+        if (animation.mode !== 'paso') return;
+        const step = flow.steps[dot.stepIndex ?? -1];
+        if (!step) return;
+        const elapsed = timeMs - step.startMs;
         // El nodo destino sigue caliente un instante después de la llegada.
         if (elapsed >= step.durationMs && elapsed <= step.durationMs + NODE_PULSE_MS) {
           nextHotNodes.add(step.to);
@@ -128,22 +165,22 @@ export function FlowPackets({ flow, onStepChange }: Props) {
       hotNodes.current = new Set();
       firingEdges.current = new Set();
     };
-  }, [flow, onStepChange]);
+  }, [animation, dots, flow, onStepChange]);
 
   if (!flow) return null;
 
   return (
     <ViewportPortal>
-      {flow.steps.map((step, i) => (
+      {dots.map((dot, index) => (
         <div
-          key={`${step.edgeId}-${i}`}
+          key={dot.key}
           ref={(element) => {
-            packetRefs.current[i] = element;
+            dotRefs.current[index] = element;
           }}
-          className={`packet${step.async ? ' packet--async' : ''}`}
+          className={`packet${dot.async ? ' packet--async' : ''}${dot.trailIndex > 0 ? ' packet--trail' : ''}`}
           style={
             {
-              '--packet-color': protocolColor[step.protocol],
+              '--packet-color': protocolColor[dot.protocol],
               visibility: 'hidden',
               opacity: 0,
             } as React.CSSProperties

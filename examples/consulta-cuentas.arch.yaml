@@ -22,11 +22,7 @@ zones:
     label: Experiencia (BFF)
     platform: AKS-PROD-01
     color: '#6366f1'
-    layout:
-      x: 543
-      y: 329
-      width: 303
-      height: 306
+    layout: { x: 543, y: 329, width: 528, height: 318 }
 
   - id: negocio
     label: Negocio

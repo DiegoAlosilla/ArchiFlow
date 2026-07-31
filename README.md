@@ -112,6 +112,7 @@ da a la vez la arista, el nombre del destino y hasta la zona.
 | `archiflow serve [dir]` | Web local con recarga en caliente sobre los `.arch.yaml` |
 | `archiflow validate [dir]` | Valida contra el esquema, con línea y columna en cada error |
 | `archiflow scan [repo]` | Recolecta evidencias de un microservicio Quarkus/Spring |
+| `archiflow import <file>` | Convierte un `.drawio` o un ArchiMate en un `.arch.yaml` borrador |
 | `archiflow export <file> --to drawio\|svg\|mermaid\|json\|archimate` | Exporta |
 
 ## Exportar
@@ -123,6 +124,8 @@ La web animada es el entregable. Los exports existen para compartir con quien no
 | **draw.io** (`.drawio`) | Una página con la topología y **una por flujo, con los pasos numerados**. Traducción honesta de una animación a un formato estático: se pierde el movimiento, se conserva el orden. |
 | **SVG** | Vectorial y autocontenido. Se abre en cualquier sitio, se incrusta en un correo y draw.io también lo importa. |
 | **PNG / JPG** | Rasterizados del SVG a 1×, 2× o 3×, con tema claro u oscuro y fondo opcionalmente transparente. |
+| **GIF animado** | Una vuelta completa del flujo activo, en bucle. Es lo que se pega en un Confluence o en un Teams, donde acaba viviendo la documentación. |
+| **PDF** | Una página con el diagrama, para imprimir o adjuntar. |
 | **Mermaid** (`.md`) | Topología como `flowchart` y cada flujo como `sequenceDiagram`. Para pegar en un PR — GitHub lo renderiza — y porque un LLM lo entiende sin contexto. |
 | **JSON** | El modelo compilado, con las aristas ya inferidas y la línea de tiempo calculada, para alimentar otra herramienta. |
 | **ArchiMate** (`.xml`) | *Open Exchange File Format* de The Open Group, que Archi importa nativamente. Lleva los elementos, las relaciones y una vista con la geometría, para que al abrirlo haya un diagrama y no solo un árbol de modelo. |
@@ -152,10 +155,11 @@ Del inspector aún faltan `provides`, `topics` y `tags`: esos campos hay que toc
 
 **Limitaciones conocidas hoy:**
 
-- No hay importador; ni de draw.io ni de ArchiMate. La exportación a ArchiMate valida contra el XSD oficial, pero **nadie la ha abierto todavía en Archi**.
+- El importador de draw.io y ArchiMate produce **borradores**: reconstruir semántica desde geometría acierta mucho y falla algo, y el orden de los pasos es una conjetura salvo que las flechas vengan numeradas. La skill `/archiflow-import` es la que lo interpreta bien.
+- La exportación a ArchiMate valida contra el XSD oficial, pero **nadie la ha abierto todavía en Archi**.
 - El historial de deshacer vive en la sesión del servidor: se pierde al reiniciarlo, y solo cubre las escrituras hechas desde la web. El respaldo real sigue siendo git.
 - Las páginas son ficheros de la carpeta: no se pueden crear ni renombrar desde la web.
-- La animación es un paso a la vez, con un paquete por arista: falta el modo de flujo continuo y los ajustes de velocidad y dirección.
+- Los ajustes de animación se escriben a mano en el YAML (clave `animation:`); los controles de la barra inferior valen solo para la sesión.
 
 **Siguientes pasos**, priorizados y con las decisiones de diseño ya tomadas: [HANDOFF.md](HANDOFF.md) y [ADR-003](docs/01_Arquitectura/ADR-003_Modelo_extendido_paginas_e_interoperabilidad.md). Más allá de eso: `archiflow diff` (contrastar el diagrama contra el código en CI) y la generación del esqueleto OpenAPI, que cierra el ciclo contract-first.
 
