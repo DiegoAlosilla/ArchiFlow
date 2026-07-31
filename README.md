@@ -112,6 +112,7 @@ da a la vez la arista, el nombre del destino y hasta la zona.
 | `archiflow serve [dir]` | Web local con recarga en caliente sobre los `.arch.yaml` |
 | `archiflow validate [dir]` | Valida contra el esquema, con línea y columna en cada error |
 | `archiflow scan [repo]` | Recolecta evidencias de un microservicio Quarkus/Spring |
+| `archiflow import <file>` | Convierte un `.drawio` o un ArchiMate en un `.arch.yaml` borrador |
 | `archiflow export <file> --to drawio\|svg\|mermaid\|json\|archimate` | Exporta |
 
 ## Exportar
@@ -152,7 +153,8 @@ Del inspector aún faltan `provides`, `topics` y `tags`: esos campos hay que toc
 
 **Limitaciones conocidas hoy:**
 
-- No hay importador; ni de draw.io ni de ArchiMate. La exportación a ArchiMate valida contra el XSD oficial, pero **nadie la ha abierto todavía en Archi**.
+- El importador de draw.io y ArchiMate produce **borradores**: reconstruir semántica desde geometría acierta mucho y falla algo, y el orden de los pasos es una conjetura salvo que las flechas vengan numeradas. La skill `/archiflow-import` es la que lo interpreta bien.
+- La exportación a ArchiMate valida contra el XSD oficial, pero **nadie la ha abierto todavía en Archi**.
 - El historial de deshacer vive en la sesión del servidor: se pierde al reiniciarlo, y solo cubre las escrituras hechas desde la web. El respaldo real sigue siendo git.
 - Las páginas son ficheros de la carpeta: no se pueden crear ni renombrar desde la web.
 - La animación es un paso a la vez, con un paquete por arista: falta el modo de flujo continuo y los ajustes de velocidad y dirección.

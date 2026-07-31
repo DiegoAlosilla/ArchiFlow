@@ -85,10 +85,15 @@ Y validar con `System.Xml.Schema.XmlSchemaSet` apuntando a `archimate3_Diagram.x
 
 Campos `request` y `response` en el paso (D5), texto libre. Van en el inspector como `<textarea>` monoespaciado y en un panel plegable del lienzo al seleccionar el paso. El botón "Formatear JSON" reindenta si parsea y **no hace nada si no** — en diseño el ejemplo suele estar a medias y no se le puede exigir que compile.
 
-**Falta el importador**, que era la otra mitad de P4:
+### P4b — Importador de draw.io y ArchiMate ✔
 
-- `archiflow import <fichero>`: mxGraph y ArchiMate → `.arch.yaml` borrador. Deduce el tipo por forma, color y texto. **Emite avisos de todo lo que hayas deducido**, no solo de lo que falle.
-- Si hay que recortar alcance, el importador de ArchiMate es lo primero que cae: exportar es lo que desbloquea la adopción.
+`archiflow import <fichero>` en `src/import/`. Lo que hay que saber:
+
+- **draw.io guarda el modelo comprimido** (base64 de un deflate crudo, además URL-encoded). Sin `inflateRaw` no hay nada que leer, y es la trampa en la que cae quien intenta pasarle el fichero a un modelo tal cual.
+- El XML se lee con un lector propio de 90 líneas (`src/import/xml.ts`) en vez de una dependencia. **No es un parser conforme**: si algún día hace falta más, cámbialo por uno de verdad en vez de estirarlo.
+- Salen **evidencias**, no un diagrama: cada caja viaja con su estilo crudo, el tipo deducido, la confianza y el motivo. `--evidence` las vuelca en JSON para la skill `/archiflow-import`, que es quien decide tipos, zonas y orden con criterio.
+- El borrador se escribe con `yaml.Document` desde un objeto, que es lo que la invariante 1 prohíbe — y aquí se puede porque el fichero **no existe todavía**: no hay comentarios que destruir. En cuanto existe, manda `src/edit`.
+- El orden de los pasos sale de la numeración de las flechas si la hay (`1.1`, `2.`); si no, de la posición, **y se avisa de que es una conjetura**.
 
 ---
 
