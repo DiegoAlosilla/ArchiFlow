@@ -3,12 +3,15 @@ import {
   anchorPoint,
   computeLayout,
   computeSlots,
+  pointAlong,
   routeEdge,
   ENDPOINT_ROW,
   NODE_HEADER,
   type Box,
   type LaidOutGraph,
+  type Point,
 } from '../layout/index.js';
+import { buildDots, dotFade, dotProgress } from '../animation.js';
 import { kindAccent, protocolColor } from '../theme.js';
 
 /**
@@ -33,6 +36,12 @@ export interface SvgOptions {
   light?: boolean;
   /** Margen alrededor del contenido. */
   padding?: number;
+  /**
+   * Instante de la animación que se dibuja, en ms. Sin él el SVG es estático,
+   * que es lo que se quiere para pegar en un documento; con él se congela un
+   * fotograma, que es de lo que se hace el GIF. Necesita `flowId`.
+   */
+  timeMs?: number;
 }
 
 interface Palette {
@@ -172,7 +181,7 @@ function renderNode(node: IrNode, box: Box, palette: Palette, dimmed: boolean): 
 }
 
 export async function toSvg(ir: Ir, options: SvgOptions = {}): Promise<string> {
-  const { flowId, numberSteps = true, transparent = false, light = false, padding = 32 } = options;
+  const { flowId, numberSteps = true, transparent = false, light = false, padding = 32, timeMs } = options;
 
   const palette = light ? LIGHT : DARK;
   const laid = await computeLayout(ir);
@@ -227,6 +236,8 @@ export async function toSvg(ir: Ir, options: SvgOptions = {}): Promise<string> {
 
   // ── Aristas ──────────────────────────────────────────────────
   const labels: string[] = [];
+  /** Recorrido de cada arista, para colocar encima los puntos congelados. */
+  const routes = new Map<string, Point[]>();
   for (const edge of ir.edges) {
     const slot = slots.get(edge.id);
     const from = boxes.get(edge.source);
@@ -240,6 +251,7 @@ export async function toSvg(ir: Ir, options: SvgOptions = {}): Promise<string> {
     const end = anchorPoint(to, slot.targetSide, slot.targetIndex, slot.targetCount);
     const obstacles = [...boxes.values()].filter((box) => box.id !== edge.source && box.id !== edge.target);
     const route = routeEdge(start, slot.sourceSide, end, slot.targetSide, obstacles);
+    routes.set(edge.id, route.points);
 
     const color = dimmed ? palette.dim : protocolColor[edge.protocol];
     const opacity = dimmed ? 0.25 : 1;
@@ -277,6 +289,30 @@ export async function toSvg(ir: Ir, options: SvgOptions = {}): Promise<string> {
     const box = boxes.get(node.id);
     if (!box) continue;
     body.push(renderNode(node, box, palette, activeNodes !== null && !activeNodes.has(node.id)));
+  }
+
+  // ── Paquetes congelados ──────────────────────────────────────
+  // Encima de las aristas y debajo de las etiquetas, igual que en el lienzo.
+  if (timeMs !== undefined && flow) {
+    for (const dot of buildDots(flow, ir.animation)) {
+      const progress = dotProgress(dot, flow, ir.animation, timeMs);
+      const points = routes.get(dot.edgeId);
+      if (progress === null || !points) continue;
+
+      const { x, y } = pointAlong(points, progress);
+      const { opacity, scale } = dotFade(dot, ir.animation);
+      const color = protocolColor[dot.protocol];
+      const radius = 5.5 * scale;
+
+      // El halo del lienzo es un `box-shadow`; aquí es un círculo detrás, que
+      // es lo que sobrevive a la rasterización y a los 256 colores del GIF.
+      body.push(
+        `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(radius * 2.1).toFixed(1)}" ` +
+          `fill="${color}" fill-opacity="${(opacity * 0.18).toFixed(2)}" />`,
+        `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${radius.toFixed(1)}" ` +
+          `fill="${color}" fill-opacity="${opacity.toFixed(2)}" />`,
+      );
+    }
   }
 
   // Las etiquetas van al final para que ninguna arista las tape.

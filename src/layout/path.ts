@@ -111,6 +111,42 @@ export interface Route {
 /** Cuánto se aparta la etiqueta del trazo. */
 const LABEL_GAP = 13;
 
+/**
+ * Punto a la fracción `t` de una polilínea.
+ *
+ * El navegador tiene `getPointAtLength`, pero el exportador corre en Node y
+ * necesita las mismas posiciones para congelar un fotograma. Se mide sobre los
+ * vértices sin redondear: la diferencia con la curva real es de unos pocos
+ * píxeles en las esquinas, invisible para un punto de 11 px.
+ */
+export function pointAlong(points: Point[], t: number): Point {
+  if (points.length === 0) return { x: 0, y: 0 };
+  if (points.length === 1) return { ...points[0]! };
+
+  const lengths: number[] = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const length = distance(points[i - 1]!, points[i]!);
+    lengths.push(length);
+    total += length;
+  }
+
+  const target = Math.min(Math.max(t, 0), 1) * total;
+  let travelled = 0;
+  for (let i = 0; i < lengths.length; i++) {
+    const length = lengths[i]!;
+    if (travelled + length >= target) {
+      const ratio = length === 0 ? 0 : (target - travelled) / length;
+      const a = points[i]!;
+      const b = points[i + 1]!;
+      return { x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio };
+    }
+    travelled += length;
+  }
+
+  return { ...points[points.length - 1]! };
+}
+
 export function routeEdge(
   from: Point,
   fromSide: Side,

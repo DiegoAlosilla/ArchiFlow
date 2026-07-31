@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { ViewportPortal } from '@xyflow/react';
 import type { AnimationSettings, IrFlow } from '@archiflow/schema';
+import {
+  ARRIVAL_THRESHOLD,
+  buildDots,
+  dotFade,
+  dotProgress,
+  type AnimationDot,
+} from '@archiflow/animation';
 import { clock } from './playback';
 import { getEdgePath, measurer } from './edgeRegistry';
 import { protocolColor } from './kinds';
@@ -33,75 +40,6 @@ interface Props {
 
 /** Ventana tras la llegada durante la que el nodo destino queda resaltado. */
 const NODE_PULSE_MS = 420;
-/** Fracción del trayecto a partir de la cual se considera que "está llegando". */
-const ARRIVAL_THRESHOLD = 0.9;
-/** Separación entre los puntos de una estela, en fracción del recorrido. */
-const TRAIL_GAP = 0.028;
-
-/** Un punto dibujado: o la cabeza de un paquete, o uno de su estela. */
-interface Dot {
-  key: string;
-  edgeId: string;
-  protocol: IrFlow['steps'][number]['protocol'];
-  async: boolean;
-  /** Solo en modo paso: a qué paso pertenece. */
-  stepIndex?: number;
-  /** Solo en modo continuo: desfase dentro de la arista. */
-  offset: number;
-  /** 0 es la cabeza; el resto es estela. */
-  trailIndex: number;
-  to: string;
-  from: string;
-}
-
-function buildDots(flow: IrFlow, animation: AnimationSettings): Dot[] {
-  const trail = animation.trail;
-  const dots: Dot[] = [];
-
-  if (animation.mode === 'paso') {
-    flow.steps.forEach((step, index) => {
-      for (let t = 0; t <= trail; t++) {
-        dots.push({
-          key: `s${index}-${t}`,
-          edgeId: step.edgeId,
-          protocol: step.protocol,
-          async: step.async,
-          stepIndex: index,
-          offset: 0,
-          trailIndex: t,
-          from: step.from,
-          to: step.to,
-        });
-      }
-    });
-    return dots;
-  }
-
-  // Una arista puede aparecer en varios pasos; en continuo se anima una vez.
-  const seen = new Map<string, IrFlow['steps'][number]>();
-  for (const step of flow.steps) if (!seen.has(step.edgeId)) seen.set(step.edgeId, step);
-
-  [...seen.values()].forEach((step, index) => {
-    for (let packet = 0; packet < animation.packetsPerEdge; packet++) {
-      for (let t = 0; t <= trail; t++) {
-        dots.push({
-          key: `c${step.edgeId}-${packet}-${t}`,
-          edgeId: step.edgeId,
-          protocol: step.protocol,
-          async: step.async,
-          // Desfase por paquete, más uno por arista para que no salgan todos
-          // los puntos del diagrama alineados como en un metrónomo.
-          offset: packet / animation.packetsPerEdge + (index % 7) * 0.037,
-          trailIndex: t,
-          from: step.from,
-          to: step.to,
-        });
-      }
-    }
-  });
-
-  return dots;
-}
 
 export function FlowPackets({ flow, animation, onStepChange }: Props) {
   const dotRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -139,18 +77,11 @@ export function FlowPackets({ flow, animation, onStepChange }: Props) {
       return edgeElements.get(id) ?? null;
     };
 
-    /** Sentido del recorrido. `alterna` cambia en cada vuelta completa. */
-    const orient = (progress: number, lap: number): number => {
-      if (animation.direction === 'inversa') return 1 - progress;
-      if (animation.direction === 'alterna' && lap % 2 === 1) return 1 - progress;
-      return progress;
-    };
-
-    const place = (dot: Dot, index: number, progress: number, visible: boolean) => {
+    const place = (dot: AnimationDot, index: number, progress: number | null) => {
       const element = dotRefs.current[index];
       if (!element) return;
 
-      if (!visible || progress < 0 || progress > 1) {
+      if (progress === null) {
         if (element.style.visibility !== 'hidden') {
           element.style.visibility = 'hidden';
           element.style.opacity = '0';
@@ -161,12 +92,10 @@ export function FlowPackets({ flow, animation, onStepChange }: Props) {
       const d = getEdgePath(dot.edgeId);
       if (!d) return;
       const { x, y } = measurer.pointAt(d, progress);
-      // La estela se dibuja más pequeña y más tenue cuanto más atrás va.
-      const fade = dot.trailIndex === 0 ? 1 : 1 - dot.trailIndex / (animation.trail + 1);
-      const scale = dot.trailIndex === 0 ? 1 : 0.4 + fade * 0.5;
+      const { opacity, scale } = dotFade(dot, animation);
       element.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%) scale(${scale.toFixed(2)})`;
       element.style.visibility = 'visible';
-      element.style.opacity = String(fade * 0.9);
+      element.style.opacity = String(opacity);
     };
 
     const render = (timeMs: number) => {
@@ -180,39 +109,30 @@ export function FlowPackets({ flow, animation, onStepChange }: Props) {
         if (timeMs >= step.startMs) activeIndex = i;
       });
 
-      if (animation.mode === 'continuo') {
-        const lap = Math.floor(timeMs / animation.cycleMs);
-        dots.forEach((dot, index) => {
-          const raw = (timeMs / animation.cycleMs + dot.offset) % 1;
-          const head = orient(raw, lap);
-          const progress = head - dot.trailIndex * TRAIL_GAP * (animation.direction === 'inversa' ? -1 : 1);
-          place(dot, index, progress, true);
+      dots.forEach((dot, index) => {
+        const progress = dotProgress(dot, flow, animation, timeMs);
+        place(dot, index, progress);
+        if (dot.trailIndex !== 0) return;
+
+        if (progress !== null) {
           nextFiringEdges.add(dot.edgeId);
-          if (dot.trailIndex === 0 && raw >= ARRIVAL_THRESHOLD) nextHotNodes.add(dot.to);
-        });
-      } else {
-        dots.forEach((dot, index) => {
-          const step = flow.steps[dot.stepIndex!]!;
-          const elapsed = timeMs - step.startMs;
-          const head = elapsed / step.durationMs;
-          const progress = orient(head, 0) - dot.trailIndex * TRAIL_GAP;
-          const inFlight = head >= 0 && head <= 1;
+          if (progress >= ARRIVAL_THRESHOLD) nextHotNodes.add(dot.to);
+        }
 
-          place(dot, index, progress, inFlight);
-          if (dot.trailIndex !== 0) return;
-
-          if (inFlight) {
-            nextFiringEdges.add(step.edgeId);
-            if (head >= ARRIVAL_THRESHOLD) nextHotNodes.add(step.to);
-          }
-          // El nodo destino sigue caliente un instante después de la llegada.
-          if (elapsed >= step.durationMs && elapsed <= step.durationMs + NODE_PULSE_MS) {
-            nextHotNodes.add(step.to);
-          }
-          // Y el origen se marca justo cuando emite.
-          if (elapsed >= 0 && elapsed <= NODE_PULSE_MS) nextHotNodes.add(step.from);
-        });
-      }
+        // El pulso de los nodos solo tiene sentido en modo paso: en continuo
+        // todo está llegando a todo y encender la mitad del diagrama a la vez
+        // no señala nada.
+        if (animation.mode !== 'paso') return;
+        const step = flow.steps[dot.stepIndex ?? -1];
+        if (!step) return;
+        const elapsed = timeMs - step.startMs;
+        // El nodo destino sigue caliente un instante después de la llegada.
+        if (elapsed >= step.durationMs && elapsed <= step.durationMs + NODE_PULSE_MS) {
+          nextHotNodes.add(step.to);
+        }
+        // Y el origen se marca justo cuando emite.
+        if (elapsed >= 0 && elapsed <= NODE_PULSE_MS) nextHotNodes.add(step.from);
+      });
 
       for (const id of hotNodes.current) {
         if (!nextHotNodes.has(id)) nodeElement(id)?.classList.remove('is-hot');

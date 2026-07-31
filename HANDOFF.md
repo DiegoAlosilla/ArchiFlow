@@ -109,37 +109,28 @@ Ver **D2**: una página es un fichero. Falta poco:
 
 ---
 
-### P7 — Animación
+### P7 — Animación ✔
 
-La referencia que pidió el usuario es [Fluyo](https://fluyo-app.vercel.app): puntos recorriendo las conexiones, velocidad 1×–4×, dirección normal / inversa / alterna, color de los puntos y estilo de línea configurables.
+Clave `animation:` en el YAML: `mode` (`paso` | `continuo`), `speed`, `packetsPerEdge`, `trail`, `direction` (`normal` | `inversa` | `alterna`) y `cycleMs`. El modo de serie sigue siendo `paso`, porque es el que hace legible un recorrido y es lo que esperan los diagramas ya escritos.
 
-Lo que hay: `web/src/playback.ts` (reloj fuera de React, a 60 fps, imperativo) y `web/src/packets.tsx` (los paquetes). La base es sólida; falta añadir:
-
-- Varios paquetes en vuelo por arista, con separación configurable.
-- Estela tipo cometa (varios puntos con opacidad decreciente).
-- Modo "flujo continuo": los puntos recorren todas las aristas del flujo sin parar, en vez de un paso cada vez.
-- Dirección inversa y alterna.
-- Ajustes por diagrama, en el YAML bajo una clave `animation:`.
+**Dónde está el cálculo**: `src/animation.ts`, fuera de la web a propósito, porque lo usan el lienzo y el exportador a GIF. Está partido en `buildDots` —lista estable, un `div` por punto— y `dotProgress`, función pura que se llama por punto y por frame sin reservar memoria. Si se cambia la fórmula, cambia en los dos sitios a la vez, que es la misma razón por la que el trazado de aristas es compartido.
 
 **No toques la arquitectura del reloj.** Está fuera de React a propósito: mover el tiempo por estado de React a 60 fps hace inservible cualquier diagrama de tamaño real. Está explicado en el comentario de cabecera de `playback.ts`.
 
+Los controles de la barra inferior son **solo de sesión**: mover un control no escribe en disco. Falta, si se quiere: una mutación `animation.update` y su parte en el inspector, para poder fijar los ajustes desde la web en vez de a mano en el YAML.
+
 ---
 
-### P8 — GIF animado y PDF
+### P8 — GIF animado y PDF ✔
 
-El GIF es lo que permite pegar el recorrido en un Confluence o un Teams, que es donde acaba viviendo la documentación del banco.
+`src/export/gif.ts` y `src/export/pdf.ts`, sin dependencias. El GIF se arma en el navegador, que es quien puede rasterizar: `toSvg(ir, { flowId, timeMs })` congela un fotograma, el canvas lo pinta y `encodeGif` junta la película.
 
-**Por qué no está hecho:** necesita cuantización de color propia. El tema oscuro con degradados se destroza en los 256 colores del GIF, y hacerlo mal se ve peor que no hacerlo.
+- **La paleta no se cuantiza, se construye.** Los colores los ponemos nosotros: fondo, textos y los acentos de `src/theme.ts`, más sus mezclas con el fondo —que es justo lo que produce el antialias de las letras y el relleno translúcido de las zonas—. Da mejor resultado que un corte mediano genérico y ahorra escribirlo.
+- La búsqueda del color más cercano va por una tabla de 32 768 entradas (RGB de 5 bits). Sin ella son 256 comparaciones por píxel y un millón de píxeles por fotograma.
+- El LZW usa claves numéricas `prefijo * 256 + siguiente`, no cadenas. Con cadenas, un fotograma real tarda segundos.
+- **Cómo comprobarlo si lo tocas**: `npx tsx scripts/gif-check.mjs salida.gif` escribe dos ficheros, uno de ellos 700×700 de ruido que **fuerza la limpieza de la tabla LZW** — la rama que un fixture pequeño nunca ejecuta y la que rompe el fichero si está mal. Ábrelos con un descodificador que no sea el tuyo.
 
-**Plan.** Tenemos a favor que la animación es determinista: `IrFlow.steps` da la posición de cada paquete en cualquier instante `t`.
-
-1. Generar N fotogramas llamando a `toSvg()` con el tiempo congelado (hace falta parametrizar la posición de los paquetes; hoy el SVG es estático).
-2. Rasterizar cada uno con canvas, como ya hace `web/src/ExportMenu.tsx`.
-3. **Paleta fija en vez de cuantización general.** Los colores los controlamos nosotros: fondo, texto, y los de `src/theme.ts`. Una paleta construida a mano de ~64 entradas más una rampa de grises evita el bandeo y ahorra escribir un algoritmo de corte mediano.
-4. Codificador LZW y ensamblado del GIF89a con bloque de control gráfico y bucle de NETSCAPE2.0.
-5. Controles: FPS (15–25) y escala, como Fluyo.
-
-**PDF**: más simple. Rasterizar a JPEG y envolverlo en un PDF de una página con un `XObject` `DCTDecode`. Son unas 80 líneas y no necesita dependencias.
+**PDF**: una página con el diagrama en JPEG dentro de un `XObject` con filtro `DCTDecode`. Vectorial sería mejor, pero traducir texto y formas a operadores de PDF con fuentes incrustadas es otro proyecto.
 
 ---
 

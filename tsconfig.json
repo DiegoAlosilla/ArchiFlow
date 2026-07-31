@@ -20,6 +20,7 @@
       "@archiflow/shared": ["./src/shared/index.ts"],
       "@archiflow/layout": ["./src/layout/index.ts"],
       "@archiflow/theme": ["./src/theme.ts"],
+      "@archiflow/animation": ["./src/animation.ts"],
       "@archiflow/export": ["./src/export/index.ts"]
     }
   },
