@@ -1,7 +1,9 @@
 import type {
   AnimationSettings,
   Diagram,
+  DiagramView,
   LayoutOverride,
+  EdgeLayout,
   NodeKind,
   Operation,
   Protocol,
@@ -58,6 +60,8 @@ export interface IrEdge {
   flows: string[];
   /** `true` si solo proviene de `edges:` y ningún flujo la recorre. */
   declaredOnly: boolean;
+  /** Ruta de Draw.io cuando el diagrama se importó en modo fiel. */
+  layout?: EdgeLayout;
 }
 
 export interface IrStep {
@@ -101,6 +105,8 @@ export interface Ir {
     version?: string;
     owner?: string;
     updated?: string;
+    view: DiagramView;
+    layoutMode: 'faithful' | 'auto';
   };
   animation: AnimationSettings;
   zones: IrZone[];
@@ -126,13 +132,13 @@ export function endpointSignature(operation: Operation): string {
 const ZONE_COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6'];
 
 /** Un paso sin latencia declarada dura esto. */
-const DEFAULT_DURATION_MS = 900;
+const DEFAULT_DURATION_MS = 1400;
 /** Respiro entre pasos secuenciales, para que el ojo distinga la transición. */
-const SEQUENTIAL_GAP_MS = 120;
+const SEQUENTIAL_GAP_MS = 180;
 /** Desfase de un paso asíncrono: no bloquea, pero se escalona para verse. */
-const ASYNC_STAGGER_MS = 180;
+const ASYNC_STAGGER_MS = 260;
 /** Cola tras el último paso, para que la animación no corte en seco. */
-const TAIL_MS = 400;
+const TAIL_MS = 650;
 
 export function edgeId(from: string, to: string): string {
   return `${from}__${to}`;
@@ -189,6 +195,7 @@ export function compile(diagram: Diagram): Ir {
     isAsync: boolean,
     label: string | undefined,
     flowId: string | undefined,
+    layout?: EdgeLayout,
   ): string => {
     const id = edgeId(from, to);
     let edge = edges.get(id);
@@ -202,6 +209,7 @@ export function compile(diagram: Diagram): Ir {
         labels: [],
         flows: [],
         declaredOnly: flowId === undefined,
+        layout,
       };
       edges.set(id, edge);
     }
@@ -214,13 +222,14 @@ export function compile(diagram: Diagram): Ir {
     // el trazo discontinuo se reserva para lo que es siempre fire-and-forget.
     if (!isAsync) edge.async = false;
     if (label && !edge.labels.includes(label)) edge.labels.push(label);
+    if (layout && !edge.layout) edge.layout = layout;
     return id;
   };
 
   // Las aristas explícitas se registran primero para que su protocolo declarado
   // sea el que prevalezca sobre el inferido.
   for (const edge of diagram.edges) {
-    upsertEdge(edge.from, edge.to, edge.protocol, edge.async, edge.label, undefined);
+    upsertEdge(edge.from, edge.to, edge.protocol, edge.async, edge.label, undefined, edge.layout);
   }
 
   const flows: IrFlow[] = diagram.flows.map((flow) => {
@@ -304,6 +313,8 @@ export function compile(diagram: Diagram): Ir {
       version: diagram.version,
       owner: diagram.owner,
       updated: diagram.updated,
+      view: diagram.view,
+      layoutMode: diagram.layoutMode,
     },
     animation: diagram.animation,
     zones,

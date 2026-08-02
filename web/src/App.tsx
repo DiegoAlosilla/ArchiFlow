@@ -19,13 +19,14 @@ export default function App() {
   const [flowId, setFlowId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(-1);
   const [selection, setSelection] = useState<Selection>(null);
+  const [presenting, setPresenting] = useState(false);
 
   /**
    * No hay modo "ver" y modo "editar": el lienzo siempre es editable y el
    * inspector aparece al seleccionar algo. Un conmutador obligaba a recordar
    * en qué modo estabas antes de poder tocar nada.
    */
-  const editing = true;
+  const editing = !presenting;
 
   const diagrams = payload?.diagrams ?? [];
 
@@ -43,7 +44,9 @@ export default function App() {
   }, [selectedDiagram, diagramId]);
 
   const { mutate, error, dismissError, saving, undo, redo } = useMutations(selectedDiagram);
-  const history = selectedDiagram ? payload?.history[selectedDiagram.id] : undefined;
+  // Un servidor que acaba de reiniciar puede entregar los diagramas antes de
+  // inicializar su historial. Editar no debe dejar la aplicación en blanco.
+  const history = selectedDiagram ? payload?.history?.[selectedDiagram.id] : undefined;
 
   const ir: Ir | null = selectedDiagram?.ir ?? null;
   const flows = ir?.flows ?? [];
@@ -113,6 +116,7 @@ export default function App() {
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); void (event.shiftKey ? redo() : undo()); }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') { event.preventDefault(); void redo(); }
+      if (event.key === 'Escape' && presenting) setPresenting(false);
       if ((event.key === 'Delete' || event.key === 'Backspace') && selection) {
         event.preventDefault();
         if (selection.kind === 'node') void mutate({ op: 'node.remove', id: selection.id }).then((ok) => ok && setSelection(null));
@@ -121,10 +125,10 @@ export default function App() {
       }
     };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
-  }, [mutate, redo, selection, undo]);
+  }, [mutate, presenting, redo, selection, undo]);
 
   return (
-    <div className="app">
+    <div className={`app${presenting ? ' app--presenting' : ''}`}>
       <header className="topbar">
         <div className="topbar__brand">
           <span className="topbar__logo" aria-hidden="true">
@@ -140,23 +144,37 @@ export default function App() {
 
         {ir && (
           <div className="topbar__diagram">
-            <h1>{ir.meta.name}</h1>
+            <h1>
+              {ir.meta.name}
+              {ir.meta.view !== 'architecture' && <span className="topbar__view">{viewLabel(ir.meta.view)}</span>}
+            </h1>
             {selectedDiagram && <p>{selectedDiagram.file}</p>}
           </div>
         )}
 
         {ir && (
           <div className="topbar__tools">
-            <button type="button" className="tool" onClick={addNode}>
-              + Nodo
-            </button>
-            <button type="button" className="tool" onClick={addZone}>
-              + Zona
-            </button>
-            <button type="button" className="tool" onClick={() => void undo()} disabled={!history?.canUndo} aria-label="Deshacer">↶</button>
-            <button type="button" className="tool" onClick={() => void redo()} disabled={!history?.canRedo} aria-label="Rehacer">↷</button>
-            <span className="topbar__divider" />
-            <ExportMenu ir={ir} flowId={selectedFlow?.id} fileName={selectedDiagram?.file ?? 'diagrama'} />
+            {presenting ? (
+              <button type="button" className="tool tool--presentation" onClick={() => setPresenting(false)}>
+                Salir de presentación
+              </button>
+            ) : (
+              <>
+                <button type="button" className="tool" onClick={addNode}>
+                  + Nodo
+                </button>
+                <button type="button" className="tool" onClick={addZone}>
+                  + Zona
+                </button>
+                <button type="button" className="tool" onClick={() => void undo()} disabled={!history?.canUndo} aria-label="Deshacer">↶</button>
+                <button type="button" className="tool" onClick={() => void redo()} disabled={!history?.canRedo} aria-label="Rehacer">↷</button>
+                <button type="button" className="tool tool--presentation" onClick={() => setPresenting(true)}>
+                  Presentar
+                </button>
+                <span className="topbar__divider" />
+                <ExportMenu ir={ir} flowId={selectedFlow?.id} fileName={selectedDiagram?.file ?? 'diagrama'} />
+              </>
+            )}
           </div>
         )}
 
@@ -179,20 +197,20 @@ export default function App() {
         <EmptyState connection={connection} root={payload?.root} />
       ) : (
         <div className="workspace">
-          <Sidebar
-            ir={ir}
-            diagrams={diagrams}
-            selectedDiagram={selectedDiagram}
-            onSelectDiagram={setDiagramId}
-            flows={flows}
-            selectedFlow={selectedFlow}
-            onSelectFlow={setFlowId}
-            currentStep={currentStep}
-            editing={editing}
-            selection={selection}
-            onSelect={setSelection}
-            mutate={mutate}
-          />
+          {!presenting && <Sidebar
+              ir={ir}
+              diagrams={diagrams}
+              selectedDiagram={selectedDiagram}
+              onSelectDiagram={setDiagramId}
+              flows={flows}
+              selectedFlow={selectedFlow}
+              onSelectFlow={setFlowId}
+              currentStep={currentStep}
+              editing={editing}
+              selection={selection}
+              onSelect={setSelection}
+              mutate={mutate}
+            />}
 
           <main className="main">
             {ir ? (
@@ -205,6 +223,7 @@ export default function App() {
                 onStepChange={handleStepChange}
                 mutate={mutate}
                 animation={settings}
+                presentation={presenting}
               />
             ) : (
               <div className="canvas canvas--error">
@@ -212,7 +231,7 @@ export default function App() {
                 <p>Revisa los errores de validación en el panel lateral.</p>
               </div>
             )}
-            <Timeline flow={selectedFlow} animation={settings} onAnimationChange={setAnimation} />
+            {!presenting && <Timeline flow={selectedFlow} animation={settings} onAnimationChange={setAnimation} />}
           </main>
 
           {editing && ir && (
@@ -224,6 +243,17 @@ export default function App() {
       )}
     </div>
   );
+}
+
+function viewLabel(view: Ir['meta']['view']): string {
+  const labels = {
+    sequence: 'Secuencia',
+    'c4-context': 'C4 · Contexto',
+    'c4-container': 'C4 · Contenedores',
+    'c4-component': 'C4 · Componentes',
+    architecture: 'Arquitectura',
+  } as const;
+  return labels[view];
 }
 
 function EmptyState({ connection, root }: { connection: string; root?: string }) {

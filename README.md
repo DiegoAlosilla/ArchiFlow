@@ -105,6 +105,35 @@ quarkus.rest-client.customer-api.url=http://ms-customer.negocio.svc.cluster.loca
 
 da a la vez la arista, el nombre del destino y hasta la zona.
 
+## Instalar las skills de ArchiFlow
+
+El repositorio incluye cuatro skills: `archiflow-design`, `archiflow-import`,
+`archiflow-scan` y `archiflow-dictation`. Instálalas después de clonar el
+repositorio para que el asistente pueda crear diagramas desde contexto,
+dictado, código o ficheros draw.io/ArchiMate.
+
+```bash
+git clone https://github.com/DiegoAlosilla/ArchiFlow.git
+cd ArchiFlow
+npm install
+npm run skills:install
+```
+
+El comando instala o actualiza las skills en `~/.claude/skills/` y reemplaza
+solo las carpetas `archiflow-*`. Reinicia Claude Code y estarán disponibles,
+por ejemplo, como `/archiflow-design` o `/archiflow-import`.
+
+Para Codex, copia las carpetas de `skills/` a la carpeta local de skills y
+reinicia la aplicación:
+
+```powershell
+Copy-Item -Recurse -Force .\skills\archiflow-* "$env:USERPROFILE\.codex\skills\"
+```
+
+En ambos casos, vuelve a ejecutar la instalación tras actualizar el repositorio
+para recibir cambios en las instrucciones de las skills. La instalación es
+local: no sube diagramas, código ni credenciales a ningún servicio.
+
 ## Comandos
 
 | Comando | Qué hace |

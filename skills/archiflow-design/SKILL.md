@@ -7,6 +7,36 @@ description: Genera un diagrama de arquitectura animado (.arch.yaml de ArchiFlow
 
 Convierte una descripción en prosa en un fichero `.arch.yaml` que ArchiFlow renderiza como diagrama animado.
 
+## Entrada por dictado o por diagrama guía
+
+No exijas una especificación formal. Si la persona dicta ideas sueltas, primero
+devuelve una confirmación compacta con entrada, dependencias, datos/eventos y
+escenarios que vas a dibujar. Interpreta "primero", "después", "en paralelo",
+"si falla" y "publica" como orden, asincronía, condiciones y eventos; nunca
+inventes nombres, tecnologías o latencias que no se hayan dicho.
+
+Si recibe un diagrama guía de otro equipo, úsalo como base semántica y aplica
+solo las modificaciones indicadas. Conserva los nodos y flujos no afectados,
+declara qué campos heredaste y cuáles cambiaste, y valida el YAML resultante.
+No redibujes desde cero cuando la instrucción sea "igual que este, pero…".
+
+## Elegir la vista
+
+Añade `view:` en la cabecera para expresar la intención de lectura:
+
+```yaml
+view: architecture   # topología de runtime por defecto
+# view: sequence     # endpoint a endpoint; un flujo por escenario
+# view: c4-context   # personas/sistemas externos y límites del sistema
+# view: c4-container # aplicaciones, BFF, bases y brokers del sistema
+# view: c4-component # componentes internos de un contenedor
+```
+
+Para C4 mantén el nivel correcto: contexto no muestra bases ni endpoints;
+container muestra aplicaciones y almacenes; component muestra piezas internas.
+Los recorridos siguen siendo `flows`, de modo que la misma vista se puede
+reproducir sin convertirla en una captura estática.
+
 ## Lo que hay que entender antes de escribir nada
 
 Un diagrama de ArchiFlow **no es una lista de cajas y flechas**. Son dos cosas separadas:

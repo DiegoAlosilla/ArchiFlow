@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
 import { compile } from '../src/schema/compile.js';
 import { parseDiagram } from '../src/schema/parse.js';
 import { toDrawio } from '../src/export/drawio.js';
 import { toSvg } from '../src/export/svg.js';
 import { toArchimate } from '../src/export/archimate.js';
+import { fromDrawio, toDraft } from '../src/import/index.js';
 
 /**
  * Un fichero exportado que la herramienta destino rechaza es peor que no
@@ -37,6 +39,7 @@ flows:
 `;
 
 const ir = compile(parseDiagram(source).diagram!);
+const challengeFixture = new URL('../examples/fixtures/challenge-management.drawio', import.meta.url);
 
 /** Detecta `<` sin escapar dentro de un valor de atributo, que es el fallo
  * exacto que draw.io reporta como "Unescaped '<' not allowed". */
@@ -99,6 +102,49 @@ describe('toSvg', () => {
   it('numera los pasos cuando se resalta un flujo', async () => {
     const svg = await toSvg(ir, { flowId: 'f' });
     expect(svg).toContain('1. GET /v1/cuentas');
+  });
+
+  it('mantiene los waypoints y puntas importados, sin volver a enrutar', async () => {
+    const faithful = compile(
+      parseDiagram(
+        `archiflow: 1
+name: Ruta fiel
+layoutMode: faithful
+nodes:
+  - id: origen
+    layout: { x: 20, y: 100, width: 160, height: 50 }
+  - id: destino
+    layout: { x: 260, y: 210, width: 160, height: 50 }
+edges:
+  - from: origen
+    to: destino
+    layout:
+      sourcePoint: { x: 100, y: 125 }
+      targetPoint: { x: 260, y: 235 }
+      points:
+        - { x: 180, y: 125 }
+        - { x: 180, y: 235 }
+      startArrow: classic
+      endArrow: block
+`,
+      ).diagram!,
+    );
+    const svg = await toSvg(faithful);
+    expect(svg).toContain('M 100 125 L 180 125 L 180 235 L 260 235');
+    expect(svg).toContain('marker-start="url(#arrow-http)"');
+    expect(svg).toContain('marker-end="url(#arrow-http)"');
+  });
+
+  it('congela los glifos importados completos y no usa el fallback lejano de Information Profile', async () => {
+    const evidence = fromDrawio(await readFile(challengeFixture, 'utf8'));
+    const faithful = compile(parseDiagram(toDraft(evidence).yaml).diagram!);
+    const svg = await toSvg(faithful, { assetBaseUrl: 'http://127.0.0.1:4125' });
+
+    expect(svg).toContain('/brands/mobile.svg');
+    expect(svg).toContain('/brands/firewall.svg');
+    expect(svg).toContain('/azure/application-gateway.svg');
+    expect(svg).toContain('/brands/firebase.svg');
+    expect(svg).not.toContain('M 630 1565');
   });
 });
 

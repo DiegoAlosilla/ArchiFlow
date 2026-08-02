@@ -99,6 +99,7 @@ export function fromArchimate(source: string): ImportEvidence {
       height: box?.height ?? 0,
       parent: box?.parent,
       container: GROUPINGS.has(type),
+      renderKind: GROUPINGS.has(type) ? 'visible-container' : 'component',
       kind: refined,
       confidence: mapped ? 'alta' : 'baja',
       reason: mapped

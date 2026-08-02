@@ -97,6 +97,10 @@ export function layoutSignature(ir: Ir): string {
 
 /** Solo ELK, sin aplicar posiciones fijadas a mano. */
 export async function computeBaseLayout(ir: Ir): Promise<LaidOutGraph> {
+  // La geometría proveniente de Draw.io ya es una decisión humana. Ejecutar
+  // ELK encima la convierte en una interpretación distinta (normalmente
+  // vertical) y destruye contenedores, alineaciones y rutas ortogonales.
+  if (ir.meta.layoutMode === 'faithful') return faithfulLayout(ir);
   const nodeById = new Map(ir.nodes.map((node) => [node.id, node]));
 
   const toElkNode = (node: IrNode): ElkNode => ({
@@ -177,6 +181,40 @@ export async function computeBaseLayout(ir: Ir): Promise<LaidOutGraph> {
     width: laid.width ?? 0,
     height: laid.height ?? 0,
   };
+}
+
+/** Construye las cajas del XML sin alterar coordenadas ni tamaños importados. */
+function faithfulLayout(ir: Ir): LaidOutGraph {
+  const zones: LaidOutZone[] = ir.zones.map((zone) => {
+    const layout = zone.layout ?? { x: 0, y: 0, width: MIN_ZONE_WIDTH, height: MIN_ZONE_HEIGHT };
+    const children = ir.nodes
+      .filter((node) => node.zone === zone.id)
+      .map((node) => ({
+        id: node.id,
+        x: node.layout?.x ?? ZONE_PADDING,
+        y: node.layout?.y ?? ZONE_HEADER,
+        width: nodeWidth(node),
+        height: nodeHeight(node),
+      }));
+    return {
+      id: `zone:${zone.id}`,
+      x: layout.x,
+      y: layout.y,
+      width: layout.width ?? MIN_ZONE_WIDTH,
+      height: layout.height ?? MIN_ZONE_HEIGHT,
+      children,
+    };
+  });
+  const loose = ir.nodes
+    .filter((node) => !node.zone)
+    .map((node) => ({
+      id: node.id,
+      x: node.layout?.x ?? 0,
+      y: node.layout?.y ?? 0,
+      width: nodeWidth(node),
+      height: nodeHeight(node),
+    }));
+  return { zones, loose, width: 0, height: 0 };
 }
 
 /**

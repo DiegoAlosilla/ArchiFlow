@@ -56,8 +56,22 @@ export interface Draft {
 
 export function toDraft(evidence: ImportEvidence, options: DraftOptions = {}): Draft {
   const ids = uniqueIds(evidence.shapes);
-  const containers = evidence.shapes.filter((shape) => shape.container);
-  const nodes = evidence.shapes.filter((shape) => !shape.container);
+  // Un grupo lógico viaja en `evidence.shapes` para resolver los padres, pero
+  // no puede convertirse en zona: en draw.io no tenía forma ni pintura.
+  const containers = evidence.shapes.filter((shape) => shape.renderKind === 'visible-container');
+  const nodes = evidence.shapes.filter((shape) =>
+    shape.renderKind !== 'visible-container' &&
+    shape.renderKind !== 'invisible-group' &&
+    // Si un texto es el título de un rectángulo visible, el título se dibuja
+    // con el contenedor; duplicarlo como tarjeta crea el falso nodo "BADI".
+    !(shape.renderKind === 'label' && containers.some((container) =>
+      container.label === shape.label &&
+      shape.x >= container.x && shape.y >= container.y &&
+      shape.x + shape.width <= container.x + container.width &&
+      shape.y + shape.height <= container.y + container.height,
+    )),
+  );
+  const containerByArchId = new Map(containers.map((shape) => [ids.get(shape.id)!, shape]));
 
   const zoneOf = (shape: ImportedShape): string | undefined => {
     // El contenedor puede estar a más de un nivel: se sube hasta encontrar uno.
@@ -66,10 +80,28 @@ export function toDraft(evidence: ImportEvidence, options: DraftOptions = {}): D
     while (current && !seen.has(current)) {
       seen.add(current);
       const parent = evidence.shapes.find((candidate) => candidate.id === current);
-      if (!parent) return undefined;
-      if (parent.container) return ids.get(parent.id);
+      // Los grupos Draw.io son puramente gráficos y no siempre se exportan
+      // como shapes. Si falta uno, aún podemos deducir la zona por geometría.
+      if (!parent) break;
+      if (parent.renderKind === 'visible-container') return ids.get(parent.id);
       current = parent.parent;
     }
+
+    // Los diagramas exportados por algunas plantillas Azure dibujan la nube o
+    // el dominio como un gran rectángulo de fondo, sin hacer a las celdas hijas
+    // de él. Conservamos igualmente esa agrupación visual como zona, eligiendo
+    // el contenedor geométrico más pequeño que envuelve la forma.
+    const containing = containers
+      .filter(
+        (container) =>
+          container.id !== shape.id &&
+          shape.x >= container.x &&
+          shape.y >= container.y &&
+          shape.x + shape.width <= container.x + container.width &&
+          shape.y + shape.height <= container.y + container.height,
+      )
+      .sort((a, b) => a.width * a.height - b.width * b.height)[0];
+    if (containing) return ids.get(containing.id);
     return undefined;
   };
 
@@ -111,23 +143,73 @@ export function toDraft(evidence: ImportEvidence, options: DraftOptions = {}): D
     archiflow: 1,
     name: options.name ?? evidence.pages[0]?.name ?? 'Diagrama importado',
     description: `Borrador importado de ${evidence.format === 'drawio' ? 'draw.io' : 'ArchiMate'}. Revísalo antes de usarlo.`,
+    layoutMode: evidence.format === 'drawio' ? 'faithful' : 'auto',
     ...(containers.length > 0
       ? {
-          zones: containers.map((zone) => ({ id: ids.get(zone.id)!, label: zone.label || ids.get(zone.id)! })),
+          zones: containers.map((zone) => ({
+            id: ids.get(zone.id)!,
+            label: zone.label,
+            ...(colorFromStyle(zone.style) ? { color: colorFromStyle(zone.style) } : {}),
+            layout: {
+              x: Math.round(zone.x),
+              y: Math.round(zone.y),
+              width: Math.max(200, Math.round(zone.width)),
+              height: Math.max(120, Math.round(zone.height)),
+            },
+          })),
         }
       : {}),
     nodes: nodes.map((shape) => {
       const zone = zoneOf(shape);
+      const zoneShape = zone ? containerByArchId.get(zone) : undefined;
+      // El layout de un hijo de zona es relativo; el de un nodo suelto es
+      // absoluto. Así la importación conserva la composición original.
+      const x = Math.round(shape.x - (zoneShape?.x ?? 0));
+      const y = Math.round(shape.y - (zoneShape?.y ?? 0));
       return {
         id: ids.get(shape.id)!,
         label: shape.label || ids.get(shape.id)!,
         kind: shape.kind,
         ...(zone ? { zone } : {}),
+        ...(shape.drawioIcon ? { tech: techFromIcon(shape.drawioIcon) } : {}),
+        tags: [
+          'drawio:faithful',
+          `drawio:render:${shape.renderKind}`,
+          ...(shape.drawioIcon ? [`drawio:${shape.drawioIcon}`] : []),
+          ...(shape.hideLabel ? ['drawio:hide-label'] : []),
+        ],
         ...(shape.external ? { external: true } : {}),
+        layout: {
+          x,
+          y,
+          width: Math.max(1, Math.round(shape.width)),
+          height: Math.max(1, Math.round(shape.height)),
+        },
       };
     }),
     ...(links.length > 0
       ? {
+          edges: links.map((link) => ({
+            from: ids.get(link.source ?? '')!,
+            to: ids.get(link.target ?? '')!,
+            ...(stripOrder(link.label) ? { label: stripOrder(link.label) } : {}),
+            protocol: link.protocol,
+            ...(link.async ? { async: true } : {}),
+            ...(link.geometry || link.anchors || link.startArrow || link.endArrow
+              ? {
+                  layout: {
+                    ...(link.geometry?.sourcePoint ? { sourcePoint: link.geometry.sourcePoint } : {}),
+                    ...(link.geometry?.targetPoint ? { targetPoint: link.geometry.targetPoint } : {}),
+                    ...(link.geometry?.points.length ? { points: link.geometry.points } : {}),
+                    ...(link.anchors?.source ? { sourceAnchor: link.anchors.source } : {}),
+                    ...(link.anchors?.target ? { targetAnchor: link.anchors.target } : {}),
+                    ...(link.startArrow ? { startArrow: link.startArrow } : {}),
+                    ...(link.endArrow ? { endArrow: link.endArrow } : {}),
+                    style: link.style,
+                  },
+                }
+              : {}),
+          })),
           flows: [
             {
               id: 'importado',
@@ -158,4 +240,27 @@ export function toDraft(evidence: ImportEvidence, options: DraftOptions = {}): D
   ].join('\n');
 
   return { yaml: document.toString({ lineWidth: 0 }), warnings };
+}
+
+/** La etiqueta se conserva; `tech` hace visible de qué icono venía el nodo. */
+function techFromIcon(icon: string): string {
+  const names: Record<string, string> = {
+    'azure-cosmos-db': 'Azure Cosmos DB',
+    firestore: 'Firestore',
+    'event-hubs': 'Azure Event Hubs',
+    'api-management': 'Azure API Management',
+    'application-gateway': 'Application Gateway',
+    'front-doors': 'Azure Front Door',
+    'kubernetes-services': 'Kubernetes Service',
+  };
+  return names[icon] ?? `Draw.io: ${icon.replace(/-/g, ' ')}`;
+}
+
+/** Conserva el color más informativo de un contenedor Draw.io. */
+function colorFromStyle(style: string): string | undefined {
+  const token = style
+    .split(';')
+    .map((part) => part.split('='))
+    .find(([key]) => key?.toLowerCase() === 'fillcolor' || key?.toLowerCase() === 'strokecolor')?.[1];
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(token ?? '') ? token : undefined;
 }

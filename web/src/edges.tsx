@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { BaseEdge, EdgeLabelRenderer, useInternalNode, useStore, type EdgeProps } from '@xyflow/react';
-import { anchorPoint, routeEdge } from '@archiflow/layout';
+import { anchorPoint, pointBelongsToBox, routeEdge } from '@archiflow/layout';
 import { protocolColor } from './kinds';
 import { removeEdgePath, setEdgePath } from './edgeRegistry';
 import type { EdgeData } from './layout';
@@ -42,8 +42,14 @@ export function ArchiflowEdge({ id, source, target, data }: EdgeProps) {
     height: targetNode.measured.height ?? 0,
   };
 
-  const from = anchorPoint(sourceBox, slot.sourceSide, slot.sourceIndex, slot.sourceCount);
-  const to = anchorPoint(targetBox, slot.targetSide, slot.targetIndex, slot.targetCount);
+  const sourceAnchor = edge?.layout?.sourceAnchor;
+  const targetAnchor = edge?.layout?.targetAnchor;
+  const from = pointBelongsToBox(edge?.layout?.sourcePoint, sourceBox) ? edge!.layout!.sourcePoint! : (sourceAnchor
+    ? { x: sourceBox.x + sourceBox.width * sourceAnchor.x, y: sourceBox.y + sourceBox.height * sourceAnchor.y }
+    : anchorPoint(sourceBox, slot.sourceSide, slot.sourceIndex, slot.sourceCount));
+  const to = pointBelongsToBox(edge?.layout?.targetPoint, targetBox) ? edge!.layout!.targetPoint! : (targetAnchor
+    ? { x: targetBox.x + targetBox.width * targetAnchor.x, y: targetBox.y + targetBox.height * targetAnchor.y }
+    : anchorPoint(targetBox, slot.targetSide, slot.targetIndex, slot.targetCount));
 
   // `nodeLookup` conserva posiciones absolutas vivas durante el arrastre. Las
   // zonas son contenedores visuales: solo los servicios bloquean una flecha.
@@ -54,16 +60,48 @@ export function ArchiflowEdge({ id, source, target, data }: EdgeProps) {
     const height = node.measured.height ?? 0;
     return width > 0 && height > 0 ? [{ x: position.x, y: position.y, width, height }] : [];
   });
-  const route = routeEdge(from, slot.sourceSide, to, slot.targetSide, obstacles);
+  const importedPoints = edge?.layout?.points ?? [];
+  // Un único endpoint absoluto no define toda la polilínea. En ese caso se
+  // conserva dicho extremo, pero se deja que el router ortogonal cierre el
+  // tramo: unirlo directamente al otro extremo producía diagonales sueltas.
+  const route = importedPoints.length > 0
+    ? {
+        points: [from, ...importedPoints, to],
+        d: `M ${[from, ...importedPoints, to].map((point) => `${point.x} ${point.y}`).join(' L ')}`,
+        labelOffset: importedPoints[Math.floor(importedPoints.length / 2)] ?? {
+          x: (from.x + to.x) / 2,
+          y: (from.y + to.y) / 2,
+        },
+      }
+    : routeEdge(from, slot.sourceSide, to, slot.targetSide, obstacles);
 
   // La capa de paquetes lee el trazado desde el registro, no desde React.
   setEdgePath(id, route.d);
 
   const color = edge ? protocolColor[edge.protocol] : '#64748b';
+  // Los marcadores se declaran junto al path final. Aunque React Flow no
+  // reproduce todas las puntas propietarias de mxGraph, conserva su presencia,
+  // sentido y los casos explícitos `none` del XML.
+  const markerId = `archiflow-arrow-${id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const markerStart = edge?.layout?.startArrow && edge.layout.startArrow !== 'none'
+    ? `url(#${markerId})`
+    : undefined;
+  const markerEnd = edge?.layout?.endArrow !== 'none'
+    ? `url(#${markerId})`
+    : undefined;
   const label = edge?.labels[0];
+  // Un protocolo genérico no aporta información en pantalla y convertido en
+  // chip sobre cada flecha crea ruido. Se mantiene en el modelo, animación y
+  // exportación; solo se oculta hasta que haya una operación o mensaje útil.
+  const showLabel = label && label.toLowerCase() !== edge?.protocol.toLowerCase();
 
   return (
     <>
+      <defs>
+        <marker id={markerId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />
+        </marker>
+      </defs>
       <BaseEdge
         id={id}
         path={route.d}
@@ -72,8 +110,10 @@ export function ArchiflowEdge({ id, source, target, data }: EdgeProps) {
           strokeWidth: 1.8,
           strokeDasharray: edge?.async ? '6 5' : undefined,
         }}
+        markerStart={markerStart}
+        markerEnd={markerEnd}
       />
-      {label && (
+      {showLabel && (
         <EdgeLabelRenderer>
           <div
             className="edge-label"

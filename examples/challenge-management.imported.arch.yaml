@@ -1,0 +1,868 @@
+# BORRADOR generado por `archiflow import`. No es una traducción exacta.
+
+# · Se descarta 'KLtuKOiZbpCLr4o21I4e-36': es una imagen o maqueta de pantalla, que no tiene equivalente en el modelo.
+# · Se descarta 'KLtuKOiZbpCLr4o21I4e-105': es una imagen o maqueta de pantalla, que no tiene equivalente en el modelo.
+# · Tipo deducido con dudas en 16 caja(s): xxx → service (sin pistas de forma ni de texto; se asume servicio); firestore → database (el texto nombra una base de datos); xxx-2 → service (sin pistas de forma ni de texto; se asume servicio); xxx-3 → service (sin pistas de forma ni de texto; se asume servicio); xxx-4 → service (sin pistas de forma ni de texto; se asume servicio); xxx-5 → service (sin pistas de forma ni de texto; se asume servicio); imperva-waf-dominio-https-apisux-mbbkbcp → gateway (el texto nombra un gateway); imperva-waf-dominio-https-apisux-mbbkbcp-2 → gateway (el texto nombra un gateway); …
+# · Ninguna flecha venía numerada: los pasos van ordenados por posición en el lienzo, que es una conjetura. Revisa el orden antes de dar el diagrama por bueno.
+
+# Revisa tipos, zonas y sobre todo el ORDEN de los pasos, y borra estos
+# comentarios cuando el diagrama sea tuyo.
+
+archiflow: 1
+name: Challenge Management
+description: Borrador importado de draw.io. Revísalo antes de usarlo.
+layoutMode: faithful
+zones:
+  - id: cloud-bcp
+    label: CLOUD BCP
+    layout:
+      x: 260
+      y: 580
+      width: 1940
+      height: 1320
+  - id: n-KLtuKOiZbpCLr4o21I4e2
+    label: ""
+    color: "#b3deff"
+    layout:
+      x: 320
+      y: 1000
+      width: 430
+      height: 235
+  - id: n-KLtuKOiZbpCLr4o21I4e3
+    label: ""
+    color: "#b3deff"
+    layout:
+      x: 1707
+      y: 909
+      width: 430
+      height: 370
+  - id: n-KLtuKOiZbpCLr4o21I4e4
+    label: ""
+    layout:
+      x: 1767
+      y: 949
+      width: 320
+      height: 290
+  - id: n-KLtuKOiZbpCLr4o21I4e9
+    label: ""
+    color: "#b3deff"
+    layout:
+      x: 830
+      y: 620
+      width: 750
+      height: 1140
+  - id: badi
+    label: BADI
+    layout:
+      x: 890
+      y: 860
+      width: 630
+      height: 850
+  - id: n-KLtuKOiZbpCLr4o21I4e45
+    label: ""
+    color: "#b3deff"
+    layout:
+      x: 320
+      y: 1280
+      width: 430
+      height: 235
+  - id: n-KLtuKOiZbpCLr4o21I4e54
+    label: ""
+    color: "#b3deff"
+    layout:
+      x: 320
+      y: 1550
+      width: 430
+      height: 235
+  - id: n-KLtuKOiZbpCLr4o21I4e100
+    label: ""
+    color: "#b3deff"
+    layout:
+      x: 2240
+      y: 1040
+      width: 430
+      height: 235
+nodes:
+  - id: api-ux-challenge-management
+    label: «API UX» Challenge Management
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e4
+    tags:
+      - drawio:faithful
+      - drawio:render:component
+    layout:
+      x: 40
+      y: 30
+      width: 220
+      height: 61
+  - id: api-ux-challenge-management-2
+    label: «API UX» Challenge Management
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e4
+    tech: "Draw.io: spring"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:spring
+      - drawio:hide-label
+    layout:
+      x: 45
+      y: 35
+      width: 16
+      height: 12
+  - id: xxx
+    label: xxx
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e4
+    tech: "Draw.io: key"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:key
+    layout:
+      x: 10
+      y: 240
+      width: 13
+      height: 22
+  - id: api-bs-challenge-management
+    label: «API BS» Challenge Management
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e4
+    tags:
+      - drawio:faithful
+      - drawio:render:component
+    layout:
+      x: 40
+      y: 120
+      width: 220
+      height: 60
+  - id: api-bs-challenge-management-2
+    label: «API BS» Challenge Management
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e4
+    tech: "Draw.io: spring"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:spring
+      - drawio:hide-label
+    layout:
+      x: 45
+      y: 125
+      width: 30
+      height: 21
+  - id: topico-crosschannel
+    label: TOPICO CROSSCHANNEL
+    kind: broker
+    zone: cloud-bcp
+    tech: Azure Event Hubs
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:event-hubs
+    layout:
+      x: 1579
+      y: 729
+      width: 21
+      height: 22
+  - id: api-ux-channel-mbbk-transaction-authoriz
+    label: «API UX» channel-mbbk-transaction-authorization-mobile-v1
+    kind: service
+    zone: badi
+    tags:
+      - drawio:faithful
+      - drawio:render:component
+    layout:
+      x: 80
+      y: 140
+      width: 305
+      height: 60
+  - id: api-ux-channel-mbbk-transaction-authoriz-2
+    label: «API UX» channel-mbbk-transaction-authorization-mobile-v1
+    kind: service
+    zone: badi
+    tech: "Draw.io: spring"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:spring
+      - drawio:hide-label
+    layout:
+      x: 86
+      y: 145
+      width: 30
+      height: 21
+  - id: api-bs-transaction-authorization-mobile-
+    label: «API BS» transaction-authorization-mobile-v1
+    kind: service
+    zone: badi
+    tags:
+      - drawio:faithful
+      - drawio:render:component
+    layout:
+      x: 123
+      y: 350
+      width: 220
+      height: 60
+  - id: api-bs-transaction-authorization-mobile--2
+    label: «API BS» transaction-authorization-mobile-v1
+    kind: service
+    zone: badi
+    tech: "Draw.io: spring"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:spring
+      - drawio:hide-label
+    layout:
+      x: 128
+      y: 355
+      width: 30
+      height: 21
+  - id: firestore
+    label: Firestore
+    kind: database
+    zone: badi
+    tech: Firestore
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:firestore
+    layout:
+      x: 113
+      y: 240
+      width: 36
+      height: 42
+  - id: api-bs-mbbk-configuration-operation-chan
+    label: «API BS» mbbk-configuration-operation-channel-product
+    kind: service
+    zone: badi
+    tags:
+      - drawio:faithful
+      - drawio:render:component
+    layout:
+      x: 199
+      y: 600
+      width: 320
+      height: 60
+  - id: cosmos-db-transaction-authorization
+    label: Cosmos DB Transaction Authorization
+    kind: database
+    zone: badi
+    tech: Azure Cosmos DB
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:azure-cosmos-db
+    layout:
+      x: 152
+      y: 469
+      width: 68
+      height: 68
+  - id: topico-canal
+    label: TOPICO Canal
+    kind: broker
+    zone: cloud-bcp
+    tech: Azure Event Hubs
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:event-hubs
+    layout:
+      x: 1109
+      y: 1190
+      width: 21
+      height: 22
+  - id: bd-limites-canal-producto
+    label: BD Limites Canal Producto
+    kind: database
+    zone: badi
+    tech: Azure Cosmos DB
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:azure-cosmos-db
+    layout:
+      x: 222
+      y: 730
+      width: 68
+      height: 68
+  - id: api-bs-session-dialogue
+    label: «API BS» Session Dialogue
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e45
+    tags:
+      - drawio:faithful
+      - drawio:render:component
+    layout:
+      x: 100
+      y: 85
+      width: 220
+      height: 60
+  - id: api-bs-session-dialogue-2
+    label: «API BS» Session Dialogue
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e45
+    tech: "Draw.io: spring"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:spring
+      - drawio:hide-label
+    layout:
+      x: 105
+      y: 90
+      width: 30
+      height: 21
+  - id: xxx-2
+    label: xxx
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e45
+    tech: "Draw.io: key"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:key
+    layout:
+      x: 70
+      y: 155
+      width: 13
+      height: 22
+  - id: api-bs-information-profile-transaction-a
+    label: «API BS» Information Profile Transaction Authorization
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e54
+    tags:
+      - drawio:faithful
+      - drawio:render:component
+    layout:
+      x: 70
+      y: 85
+      width: 300
+      height: 60
+  - id: api-bs-information-profile-transaction-a-2
+    label: «API BS» Information Profile Transaction Authorization
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e54
+    tech: "Draw.io: spring"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:spring
+      - drawio:hide-label
+    layout:
+      x: 77
+      y: 90
+      width: 30
+      height: 21
+  - id: xxx-3
+    label: xxx
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e54
+    tech: "Draw.io: key"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:key
+    layout:
+      x: 70
+      y: 155
+      width: 13
+      height: 22
+  - id: api-management
+    label: API Management
+    kind: gateway
+    zone: cloud-bcp
+    tech: Azure API Management
+    tags:
+      - drawio:faithful
+      - drawio:render:annotation
+      - drawio:api-management
+    layout:
+      x: 514
+      y: 764
+      width: 26
+      height: 22
+  - id: xxx-4
+    label: xxx
+    kind: service
+    zone: badi
+    tech: "Draw.io: key"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:key
+    layout:
+      x: 27
+      y: 798
+      width: 13
+      height: 22
+  - id: api-bs-password-assigment
+    label: «API BS» Password Assigment
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e2
+    tags:
+      - drawio:faithful
+      - drawio:render:component
+    layout:
+      x: 100
+      y: 85
+      width: 220
+      height: 60
+  - id: api-bs-password-assigment-2
+    label: «API BS» Password Assigment
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e2
+    tech: "Draw.io: spring"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:spring
+      - drawio:hide-label
+    layout:
+      x: 105
+      y: 90
+      width: 30
+      height: 21
+  - id: xxx-5
+    label: xxx
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e2
+    tech: "Draw.io: key"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:key
+    layout:
+      x: 70
+      y: 155
+      width: 13
+      height: 22
+  - id: api-management-2
+    label: API Management
+    kind: gateway
+    zone: cloud-bcp
+    tech: Azure API Management
+    tags:
+      - drawio:faithful
+      - drawio:render:annotation
+      - drawio:api-management
+    layout:
+      x: 514
+      y: 475
+      width: 26
+      height: 22
+  - id: api-management-3
+    label: API Management
+    kind: gateway
+    zone: cloud-bcp
+    tech: Azure API Management
+    tags:
+      - drawio:faithful
+      - drawio:render:annotation
+      - drawio:api-management
+    layout:
+      x: 507
+      y: 965
+      width: 26
+      height: 22
+  - id: imperva-waf-dominio-https-apisux-mbbkbcp
+    label: "Imperva WAF. Dominio: https://apisux.mbbkbcp.com"
+    kind: gateway
+    tech: "Draw.io: firewall"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:firewall
+      - drawio:hide-label
+    layout:
+      x: 1114
+      y: 481
+      width: 70
+      height: 60
+  - id: imperva-waf-dominio-https-apisux-mbbkbcp-2
+    label: "Imperva WAF. Dominio: https://apisux.mbbkbcp.com"
+    kind: gateway
+    tags:
+      - drawio:faithful
+      - drawio:render:label
+    layout:
+      x: 1232
+      y: 500
+      width: 40
+      height: 20
+  - id: cosmos-db-transaction-authorization-2
+    label: Cosmos DB Transaction Authorization
+    kind: database
+    zone: n-KLtuKOiZbpCLr4o21I4e9
+    tech: Azure Front Door
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:front-doors
+      - drawio:hide-label
+    layout:
+      x: 283
+      y: 37
+      width: 73
+      height: 65
+  - id: frontend-android-ios
+    label: FrontEnd (Android/iOS)
+    kind: client
+    tech: "Draw.io: mobile"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:mobile
+      - drawio:hide-label
+    layout:
+      x: 1130
+      y: 340
+      width: 37
+      height: 67
+  - id: frontend-android-ios-2
+    label: FrontEnd (Android/iOS)
+    kind: client
+    tags:
+      - drawio:faithful
+      - drawio:render:label
+    layout:
+      x: 1172
+      y: 353
+      width: 83
+      height: 37
+  - id: application-gateway
+    label: Application Gateway
+    kind: gateway
+    zone: n-KLtuKOiZbpCLr4o21I4e9
+    tech: Application Gateway
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:application-gateway
+      - drawio:hide-label
+    layout:
+      x: 279
+      y: 132
+      width: 82
+      height: 82
+  - id: application-gateway-2
+    label: Application Gateway
+    kind: gateway
+    zone: n-KLtuKOiZbpCLr4o21I4e9
+    tags:
+      - drawio:faithful
+      - drawio:render:label
+    layout:
+      x: 365
+      y: 162
+      width: 100
+      height: 20
+  - id: selfhosted-gateway-shgwbadi
+    label: «Selfhosted Gateway» shgwbadi
+    kind: gateway
+    zone: badi
+    tags:
+      - drawio:faithful
+      - drawio:render:component
+    layout:
+      x: 150
+      y: 32
+      width: 220
+      height: 60
+  - id: external-services-transmit-services
+    label: «External Services» Transmit Services
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e100
+    tags:
+      - drawio:faithful
+      - drawio:render:component
+    layout:
+      x: 100
+      y: 85
+      width: 220
+      height: 60
+  - id: xxx-6
+    label: xxx
+    kind: service
+    zone: n-KLtuKOiZbpCLr4o21I4e100
+    tech: "Draw.io: key"
+    tags:
+      - drawio:faithful
+      - drawio:render:image
+      - drawio:key
+    layout:
+      x: 70
+      y: 155
+      width: 13
+      height: 22
+edges:
+  - from: imperva-waf-dominio-https-apisux-mbbkbcp-2
+    to: cosmos-db-transaction-authorization-2
+    protocol: http
+    layout:
+      startArrow: classic
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;startArrow=classic;startFill=1;
+  - from: imperva-waf-dominio-https-apisux-mbbkbcp-2
+    to: frontend-android-ios-2
+    protocol: http
+    layout:
+      startArrow: classic
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;startArrow=classic;startFill=1;
+  - from: cosmos-db-transaction-authorization-2
+    to: application-gateway-2
+    protocol: http
+    layout:
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;
+  - from: application-gateway-2
+    to: selfhosted-gateway-shgwbadi
+    protocol: http
+    layout:
+      startArrow: classic
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;startArrow=classic;startFill=1;
+  - from: application-gateway-2
+    to: api-ux-challenge-management
+    protocol: http
+    layout:
+      sourcePoint:
+        x: 1150
+        y: 834
+      points:
+        - x: 1150
+          y: 870
+        - x: 1630
+          y: 870
+        - x: 1630
+          y: 1010
+      targetAnchor:
+        x: 0
+        y: 0.5
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;
+  - from: api-ux-challenge-management
+    to: api-bs-challenge-management
+    protocol: http
+    layout:
+      targetAnchor:
+        x: 0.5
+        y: 0
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;
+  - from: api-ux-channel-mbbk-transaction-authoriz
+    to: api-bs-transaction-authorization-mobile-
+    protocol: http
+    layout:
+      targetAnchor:
+        x: 0.5
+        y: 0
+      startArrow: classic
+      style: rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;startArrow=classic;startFill=1;
+  - from: api-ux-channel-mbbk-transaction-authoriz
+    to: firestore
+    protocol: http
+    layout:
+      targetAnchor:
+        x: 0.5
+        y: 0
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;
+  - from: api-ux-channel-mbbk-transaction-authoriz
+    to: selfhosted-gateway-shgwbadi
+    protocol: http
+    layout:
+      sourcePoint:
+        x: 1213
+        y: 978
+      targetPoint:
+        x: 1210.0027797833936
+        y: 936.5
+      sourceAnchor:
+        x: 0.5
+        y: 0
+      targetAnchor:
+        x: 0.5
+        y: 1
+      startArrow: block
+      endArrow: block
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;startArrow=block;startFill=1;sourcePerimeterSpacing=0;endArrow=block;endFill=1;targetPerimeterSpacing=20;fontSize=10;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;
+  - from: api-management-2
+    to: api-bs-password-assigment
+    protocol: http
+    layout:
+      targetAnchor:
+        x: 1
+        y: 0.5
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;
+  - from: api-bs-challenge-management
+    to: topico-crosschannel
+    protocol: http
+    layout:
+      sourcePoint:
+        x: 1974.6400000000003
+        y: 1114.21
+      points:
+        - x: 1870
+          y: 1129
+        - x: 1870
+          y: 1219
+        - x: 1849
+          y: 1219
+      sourceAnchor:
+        x: 0.5
+        y: 1
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;
+  - from: api-bs-challenge-management
+    to: external-services-transmit-services
+    protocol: http
+    layout:
+      targetAnchor:
+        x: 0
+        y: 0.5
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;
+  - from: api-bs-transaction-authorization-mobile-
+    to: cosmos-db-transaction-authorization
+    protocol: http
+    layout:
+      targetPoint:
+        x: 1071.2500000000002
+        y: 1330
+      targetAnchor:
+        x: 0.5
+        y: 0
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;
+  - from: api-bs-transaction-authorization-mobile-
+    to: api-bs-mbbk-configuration-operation-chan
+    protocol: http
+    layout:
+      points:
+        - x: 1250
+          y: 1240
+      targetAnchor:
+        x: 0.5
+        y: 0
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;
+  - from: api-bs-transaction-authorization-mobile-
+    to: api-management-2
+    protocol: http
+    layout:
+      targetAnchor:
+        x: 0.996
+        y: 0.558
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.996;entryY=0.558;entryDx=0;entryDy=0;entryPerimeter=0;
+  - from: api-bs-transaction-authorization-mobile-
+    to: api-management
+    protocol: http
+    layout:
+      targetAnchor:
+        x: 1.024
+        y: 0.714
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1.024;entryY=0.714;entryDx=0;entryDy=0;entryPerimeter=0;
+  - from: api-bs-transaction-authorization-mobile-
+    to: api-management-3
+    protocol: http
+    layout:
+      points:
+        - x: 930
+          y: 1260
+        - x: 930
+          y: 1555
+      targetAnchor:
+        x: 1.026
+        y: 0.477
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1.026;entryY=0.477;entryDx=0;entryDy=0;entryPerimeter=0;
+  - from: api-management
+    to: api-bs-session-dialogue
+    protocol: http
+    layout:
+      targetAnchor:
+        x: 1
+        y: 0.5
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;
+  - from: api-bs-mbbk-configuration-operation-chan
+    to: bd-limites-canal-producto
+    protocol: http
+    layout:
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;
+  - from: api-bs-mbbk-configuration-operation-chan
+    to: topico-canal
+    protocol: http
+    layout:
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;
+  - from: api-management-3
+    to: api-bs-information-profile-transaction-a
+    protocol: http
+    layout:
+      sourcePoint:
+        x: 630
+        y: 1565
+      sourceAnchor:
+        x: 0.13
+        y: 0.62
+      targetAnchor:
+        x: 0.5
+        y: 0
+      style: edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.13;exitY=0.62;exitDx=0;exitDy=0;exitPerimeter=0;
+flows:
+  - id: importado
+    label: Recorrido importado
+    steps:
+      - from: imperva-waf-dominio-https-apisux-mbbkbcp-2
+        to: cosmos-db-transaction-authorization-2
+        protocol: http
+      - from: imperva-waf-dominio-https-apisux-mbbkbcp-2
+        to: frontend-android-ios-2
+        protocol: http
+      - from: cosmos-db-transaction-authorization-2
+        to: application-gateway-2
+        protocol: http
+      - from: application-gateway-2
+        to: selfhosted-gateway-shgwbadi
+        protocol: http
+      - from: application-gateway-2
+        to: api-ux-challenge-management
+        protocol: http
+      - from: api-ux-challenge-management
+        to: api-bs-challenge-management
+        protocol: http
+      - from: api-ux-channel-mbbk-transaction-authoriz
+        to: api-bs-transaction-authorization-mobile-
+        protocol: http
+      - from: api-ux-channel-mbbk-transaction-authoriz
+        to: firestore
+        protocol: http
+      - from: api-ux-channel-mbbk-transaction-authoriz
+        to: selfhosted-gateway-shgwbadi
+        protocol: http
+      - from: api-management-2
+        to: api-bs-password-assigment
+        protocol: http
+      - from: api-bs-challenge-management
+        to: topico-crosschannel
+        protocol: http
+      - from: api-bs-challenge-management
+        to: external-services-transmit-services
+        protocol: http
+      - from: api-bs-transaction-authorization-mobile-
+        to: cosmos-db-transaction-authorization
+        protocol: http
+      - from: api-bs-transaction-authorization-mobile-
+        to: api-bs-mbbk-configuration-operation-chan
+        protocol: http
+      - from: api-bs-transaction-authorization-mobile-
+        to: api-management-2
+        protocol: http
+      - from: api-bs-transaction-authorization-mobile-
+        to: api-management
+        protocol: http
+      - from: api-bs-transaction-authorization-mobile-
+        to: api-management-3
+        protocol: http
+      - from: api-management
+        to: api-bs-session-dialogue
+        protocol: http
+      - from: api-bs-mbbk-configuration-operation-chan
+        to: bd-limites-canal-producto
+        protocol: http
+      - from: api-bs-mbbk-configuration-operation-chan
+        to: topico-canal
+        protocol: http
+      - from: api-management-3
+        to: api-bs-information-profile-transaction-a
+        protocol: http

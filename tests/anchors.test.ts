@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anchorPoint, computeSlots, routeEdge } from '../src/layout/index.js';
+import { anchorPoint, computeSlots, pointBelongsToBox, routeEdge } from '../src/layout/index.js';
 import type { Box } from '../src/layout/index.js';
 
 const box = (id: string, x: number, y: number): Box => ({ id, x, y, width: 100, height: 50 });
@@ -98,6 +98,15 @@ describe('anchorPoint', () => {
 
   it('centra la única arista de un lado', () => {
     expect(anchorPoint({ x: 0, y: 0, width: 100, height: 50 }, 'top', 0, 1)).toEqual({ x: 50, y: 0 });
+  });
+});
+
+describe('extremos importados de mxGraph', () => {
+  it('solo aplica sourcePoint cuando pertenece al terminal y evita una U artificial', () => {
+    const terminal = { x: 767, y: 1545, width: 26, height: 22 };
+    expect(pointBelongsToBox({ x: 780, y: 1556 }, terminal)).toBe(true);
+    // e-77 de Challenge Management: Draw.io dejó este fallback lejos del APIM.
+    expect(pointBelongsToBox({ x: 630, y: 1565 }, terminal)).toBe(false);
   });
 });
 

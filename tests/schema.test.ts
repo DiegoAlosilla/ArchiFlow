@@ -111,7 +111,7 @@ describe('compile', () => {
       packetsPerEdge: 3,
       trail: 3,
       direction: 'normal',
-      cycleMs: 1800,
+      cycleMs: 3000,
     });
   });
 
@@ -126,13 +126,19 @@ describe('compile', () => {
     expect(animation.direction).toBe('alterna');
     expect(animation.trail).toBe(0);
     // Lo que no se dice conserva su valor de serie.
-    expect(animation.cycleMs).toBe(1800);
+    expect(animation.cycleMs).toBe(3000);
   });
 
   it('rechaza ajustes de animación fuera de rango', () => {
     const parsed = parseDiagram('archiflow: 1\nname: A\nanimation:\n  packetsPerEdge: 40\nnodes:\n  - id: a\n');
     expect(parsed.ok).toBe(false);
     expect(parsed.issues.some((issue) => issue.path?.join('.') === 'animation.packetsPerEdge')).toBe(true);
+  });
+
+  it('acepta una vista C4 explícita', () => {
+    const parsed = parseDiagram('archiflow: 1\nname: Contexto\nview: c4-container\nnodes:\n  - id: sistema\n');
+    expect(parsed.ok).toBe(true);
+    expect(compile(parsed.diagram!).meta.view).toBe('c4-container');
   });
 
   it('resuelve un endpoint a la topología del servicio y conserva contratos', () => {

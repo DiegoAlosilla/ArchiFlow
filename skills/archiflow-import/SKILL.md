@@ -32,7 +32,7 @@ No leas el `.drawio` a pelo: draw.io guarda el modelo **comprimido** (base64 de 
 {
   "format": "drawio",
   "pages":  [ { "id", "name", "shapes": [...] } ],
-  "shapes": [ { "id", "label", "style", "x", "y", "width", "height",
+  "shapes": [ { "id", "label", "style", "drawioIcon", "x", "y", "width", "height",
                 "parent", "container", "kind", "confidence", "reason", "external" } ],
   "links":  [ { "id", "label", "source", "target", "style", "protocol", "async", "order" } ],
   "warnings": [ ... ]
@@ -40,6 +40,7 @@ No leas el `.drawio` a pelo: draw.io guarda el modelo **comprimido** (base64 de 
 ```
 
 - `style` es el estilo crudo de mxGraph. Es **la prueba**: si `kind` no te cuadra, mira ahí antes de cambiarlo.
+- `drawioIcon`, cuando existe, conserva el nombre de la librería (Azure, Kubernetes, etc.). ArchiFlow lo traduce a un tipo y tecnología local; no necesita cargar SVGs propietarios para entenderlo.
 - `confidence` es `alta` (la forma lo dice), `media` (lo dice el texto) o `baja` (no lo dice nadie y se asumió `service`).
 - `container: true` es un carril, un grupo o una caja que envuelve a otras: candidato a zona.
 - `order` es la numeración que traía la flecha en su etiqueta, si traía.
@@ -101,7 +102,7 @@ Al presentar el resultado di explícitamente:
 
 Ni lo intentes, y dilo si el usuario lo espera:
 
-- **Capturas y maquetas**: no hay equivalente en el modelo.
+- **Capturas y maquetas**: no hay equivalente en el modelo. Los iconos de infraestructura de draw.io sí se interpretan como evidencia, no se descartan.
 - **Estilos, colores y fuentes**: ArchiFlow tiene su propio tema, a propósito.
 - **Posiciones exactas**: el auto-layout recoloca. Si el usuario quiere conservar una disposición concreta, se fija después arrastrando, y eso escribe `layout` en el YAML.
 - **Del ArchiMate, el orden de los pasos**: el formato no lo guarda. Todo lo demás (tipos, zonas por Grouping, síncrono contra asíncrono) sí llega bien, porque ahí el fichero sí trae semántica.

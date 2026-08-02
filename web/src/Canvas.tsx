@@ -31,7 +31,9 @@ import type { Selection } from './selection';
  * de leerse y lo que se ve es un mapa de cajas de colores. Mejor entrar cerca y
  * que el usuario se aleje si quiere.
  */
-const FIT_VIEW = { padding: 0.14, duration: 400, minZoom: 0.5, maxZoom: 1.1 };
+// Un import fiel puede tener un lienzo grande; limitarlo a 0.5 recortaba los
+// elementos superiores/laterales en vez de aplicar un fit uniforme.
+const FIT_VIEW = { padding: 0.1, duration: 400, minZoom: 0.12, maxZoom: 1.1 };
 
 interface Props {
   ir: Ir;
@@ -42,9 +44,10 @@ interface Props {
   onStepChange: (index: number) => void;
   mutate: (...mutations: Mutation[]) => Promise<boolean>;
   animation: AnimationSettings;
+  presentation?: boolean;
 }
 
-function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mutate, animation }: Props) {
+function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mutate, animation, presentation = false }: Props) {
   const [base, setBase] = useState<LaidOutGraph | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const { fitView } = useReactFlow();
@@ -140,6 +143,25 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
     }
   }, [computed, decorate, fitView, ir.meta.name]);
 
+  // El modo presentación cambia mucho el área útil. Reencuadrar aquí evita
+  // que conserve el zoom estrecho que tenía mientras se editaba con paneles.
+  useEffect(() => {
+    if (!presentation) return;
+    // React Flow recibe la medida ampliada por ResizeObserver un frame después
+    // de que desaparecen los paneles. Dos frames aseguran que `fitView` use
+    // el lienzo de presentación, no el ancho residual del editor.
+    let nestedFrame = 0;
+    const frame = requestAnimationFrame(() => {
+      nestedFrame = requestAnimationFrame(() => {
+        fitView({ padding: 0.07, duration: 260, minZoom: 0.12, maxZoom: 1.15 });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      cancelAnimationFrame(nestedFrame);
+    };
+  }, [presentation, fitView]);
+
   const edges = useMemo(() => {
     if (!computed) return [];
     if (!flow) return computed.edges;
@@ -201,7 +223,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
   }
 
   return (
-    <div className={`canvas${editing ? ' canvas--editing' : ''}`}>
+    <div className={`canvas${editing ? ' canvas--editing' : ''}${presentation ? ' canvas--presentation' : ''}`}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -234,8 +256,8 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
       >
         {/* Cuadrícula en dos niveles: la fina para alinear al arrastrar, la
             gruesa para dar escala sin saturar la vista. */}
-        <Background id="fina" variant={BackgroundVariant.Lines} gap={20} lineWidth={1} color="#232427" />
-        <Background id="gruesa" variant={BackgroundVariant.Lines} gap={100} lineWidth={1} color="#2c2e32" />
+        <Background id="fina" variant={BackgroundVariant.Lines} gap={24} lineWidth={1} color="#1b1e22" />
+        <Background id="gruesa" variant={BackgroundVariant.Lines} gap={120} lineWidth={1} color="#24282e" />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable nodeStrokeWidth={2} maskColor="rgba(2,6,23,0.7)" />
         <FlowPackets flow={flow} animation={animation} onStepChange={onStepChange} />

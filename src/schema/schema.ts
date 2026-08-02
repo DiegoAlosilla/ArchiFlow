@@ -93,6 +93,22 @@ export const LayoutSchema = z
   .strict();
 export type LayoutOverride = z.infer<typeof LayoutSchema>;
 
+/** Geometría de una conexión importada. Las coordenadas son de lienzo absoluto. */
+export const PointSchema = z.object({ x: z.number(), y: z.number() }).strict();
+export const EdgeLayoutSchema = z
+  .object({
+    sourcePoint: PointSchema.optional(),
+    targetPoint: PointSchema.optional(),
+    points: z.array(PointSchema).default([]),
+    sourceAnchor: PointSchema.optional(),
+    targetAnchor: PointSchema.optional(),
+    startArrow: z.string().optional(),
+    endArrow: z.string().optional(),
+    style: z.string().optional(),
+  })
+  .strict();
+export type EdgeLayout = z.infer<typeof EdgeLayoutSchema>;
+
 /** Agrupador visual: capa arquitectónica, clúster, red o dominio. */
 export const ZoneSchema = z
   .object({
@@ -209,6 +225,8 @@ export const EdgeSchema = z
     label: z.string().optional(),
     protocol: z.enum(PROTOCOLS).default('http'),
     async: z.boolean().default(false),
+    /** Ruta y anclajes preservados desde Draw.io; no se autoenrutan. */
+    layout: EdgeLayoutSchema.optional(),
   })
   .strict();
 export type DeclaredEdge = z.infer<typeof EdgeSchema>;
@@ -239,10 +257,16 @@ export const AnimationSchema = z
     /** Sentido del recorrido: contra la flecha, o alternando en cada vuelta. */
     direction: z.enum(['normal', 'inversa', 'alterna']).default('normal'),
     /** Segundos que tarda un paquete en recorrer una arista en modo continuo. */
-    cycleMs: z.number().positive().max(20_000).default(1800),
+    cycleMs: z.number().positive().max(20_000).default(3000),
   })
   .strict();
 export type AnimationSettings = z.infer<typeof AnimationSchema>;
+
+/** La intención de lectura guía al agente y hace explícitas las vistas C4. */
+export const DiagramViewSchema = z
+  .enum(['architecture', 'sequence', 'c4-context', 'c4-container', 'c4-component'])
+  .default('architecture');
+export type DiagramView = z.infer<typeof DiagramViewSchema>;
 
 export const DiagramSchema = z
   .object({
@@ -252,6 +276,10 @@ export const DiagramSchema = z
     description: z.string().optional(),
     version: z.string().optional(),
     owner: z.string().optional(),
+    /** Tipo de vista: arquitectura general, secuencia o nivel C4. */
+    view: DiagramViewSchema,
+    /** `faithful` conserva la geometría importada; `auto` usa ELK de forma explícita. */
+    layoutMode: z.enum(['faithful', 'auto']).default('auto'),
     /** Fecha de última revisión humana, en ISO. */
     updated: z.string().optional(),
     animation: AnimationSchema.default({}),

@@ -16,6 +16,19 @@ export interface Point {
   y: number;
 }
 
+/** Caja mínima necesaria para validar extremos declarados por mxGraph. */
+export interface EndpointBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Un sourcePoint lejano es fallback de mxGraph, no un waypoint del enlace. */
+export function pointBelongsToBox(point: Point | undefined, box: EndpointBox, tolerance = 12): point is Point {
+  return Boolean(point && point.x >= box.x - tolerance && point.x <= box.x + box.width + tolerance && point.y >= box.y - tolerance && point.y <= box.y + box.height + tolerance);
+}
+
 /** Longitud del tramo recto que sale perpendicular al nodo antes de girar. */
 const STUB = 18;
 const RADIUS = 12;

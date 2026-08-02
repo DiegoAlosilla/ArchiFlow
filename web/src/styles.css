@@ -1,17 +1,16 @@
 :root {
-  /* Grises neutros en vez de azulados: el diagrama tiene que ser lo único
-     con color. El acento es el naranja corporativo del BCP rebajado, y el
-     secundario su azul, lo bastante apagados para no parecer una campaña. */
-  --bg: #161719;
-  --bg-panel: #1c1d20;
-  --bg-raised: #26272b;
-  --border: #34363b;
-  --border-soft: #2a2c30;
-  --text: #e7e7e9;
-  --text-muted: #9a9ca2;
-  --text-dim: #6d6f75;
-  --accent: #e07b39;
-  --accent-soft: #2f5f96;
+  /* Una superficie casi neutra deja que protocolos y tipos expliquen el
+     diagrama. El acento solo marca interacción; no compite con el contenido. */
+  --bg: #101214;
+  --bg-panel: #151719;
+  --bg-raised: #1c1f23;
+  --border: #2a2e34;
+  --border-soft: #22262b;
+  --text: #eceef1;
+  --text-muted: #a5abb4;
+  --text-dim: #737b86;
+  --accent: #98a6ff;
+  --accent-soft: #526173;
   --danger: #e06c6c;
   --warning: #d9a441;
   --ok: #4fa87a;
@@ -118,6 +117,20 @@ button {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.01em;
+}
+
+.topbar__view {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  vertical-align: 1px;
 }
 
 .topbar__diagram p {
@@ -432,6 +445,12 @@ button {
   min-height: 0;
 }
 
+.canvas--presentation .react-flow__controls,
+.canvas--presentation .react-flow__minimap,
+.canvas--presentation .node__handle {
+  display: none;
+}
+
 .canvas--loading,
 .canvas--error {
   display: grid;
@@ -476,9 +495,47 @@ button {
 .zone {
   width: 100%;
   height: 100%;
-  border: 1px dashed color-mix(in srgb, var(--zone-accent) 42%, transparent);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--zone-accent) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--zone-accent) 45%, #273445);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--zone-accent) 6%, #0f1722);
+}
+
+/* Dos niveles visuales, como una lámina de arquitectura: el perímetro cloud
+   enmarca la plataforma y el dominio interno funciona como una tarjeta clara.
+   La semántica sigue estando en el YAML; este tratamiento solo restaura la
+   jerarquía que ya existía en el plano Draw.io. */
+.zone--cloud {
+  border-color: color-mix(in srgb, #45637f 58%, transparent);
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgb(48 96 137 / 0.07), rgb(15 25 38 / 0.045) 28%, transparent);
+}
+
+.zone--cloud .zone__header {
+  justify-content: flex-end;
+  padding: 9px 14px;
+}
+
+.zone--cloud .zone__label {
+  color: #b9d8ef;
+}
+
+.zone--domain {
+  border-color: color-mix(in srgb, #4a6c88 52%, transparent);
+  background: linear-gradient(180deg, rgb(222 238 247 / 0.035), rgb(38 57 73 / 0.045));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.025);
+}
+
+/* Rectángulos sin título: suelen ser bounds internos o tarjetas de una
+   plantilla Draw.io. Se conservan (son parte de la fidelidad), pero no deben
+   competir con los perímetros nombrados al presentar el diagrama. */
+.zone--boundary {
+  border-color: color-mix(in srgb, var(--zone-accent) 18%, #334155);
+  background: color-mix(in srgb, var(--zone-accent) 1%, transparent);
+  border-radius: 4px;
+}
+
+.zone--boundary .zone__header {
+  display: none;
 }
 
 .zone__header {
@@ -516,10 +573,10 @@ button {
   width: 100%;
   height: 100%;
   padding: 0 14px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+  background: linear-gradient(135deg, #202b38, #17202b);
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, #354052);
+  border-radius: 7px;
+  box-shadow: 0 2px 7px rgb(0 0 0 / 0.28), inset 0 1px 0 rgb(255 255 255 / 0.035);
   transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
 }
 
@@ -549,9 +606,24 @@ button {
   flex-shrink: 0;
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: 7px;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.node__icon--vendor {
+  width: 38px;
+  height: 38px;
+  padding: 1px;
+  background: #f8fafc;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+}
+
+.node__icon--vendor img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .node__text {
@@ -562,12 +634,114 @@ button {
 }
 
 .node__label {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 650;
   letter-spacing: -0.005em;
-  white-space: nowrap;
+  line-height: 1.16;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* Elementos importados: conservan su propia caja; no se les impone el alto
+   de la tarjeta genérica ni se reemplaza el texto por una elipsis. */
+.node--faithful .node__label {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  font-size: clamp(7px, 1.02vw, 12.5px);
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+
+/* Los iconos y anotaciones de infraestructura son glifos del plano, no
+   microservicios. Mantienen coordenadas y etiqueta, pero sin tarjeta ni
+   puertos visibles. */
+.node--image,
+.node--annotation,
+.node--label {
+  gap: 3px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.node--image .node__icon,
+.node--annotation .node__icon,
+.node--label .node__icon {
+  width: min(52px, max(28px, 100%));
+  height: min(52px, max(28px, 100%));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.node--image .node__icon--vendor,
+.node--annotation .node__icon--vendor,
+.node--label .node__icon--vendor {
+  padding: 0;
+  background: transparent;
+}
+
+.node--image .node__text,
+.node--annotation .node__text,
+.node--label .node__text {
+  min-width: 0;
+  overflow: visible;
+}
+
+/* Draw.io permite que el rótulo de un icono sobrepase la caja del glifo. La
+   caja sigue midiendo 20–70 px para que las rutas anclen bien; el texto se
+   coloca fuera, como en el original, en lugar de partir una palabra por letra. */
+.node--image .node__text {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  width: max-content;
+  max-width: 180px;
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+.node--annotation .node__text {
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 50%;
+  width: max-content;
+  max-width: 130px;
+  transform: translateY(-50%);
+}
+
+.node--label .node__text {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: max-content;
+  max-width: 230px;
+  transform: translateY(-50%);
+}
+
+.node--annotation .node__label,
+.node--label .node__label {
+  font-size: clamp(10px, 0.78vw, 12px);
+  font-weight: 600;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.node--image .node__label {
+  font-size: clamp(10px, 0.9vw, 12px);
+}
+
+.node--image .node__subtitle,
+.node--annotation .node__subtitle,
+.node--label .node__subtitle {
+  display: none;
 }
 
 .node__subtitle {
@@ -581,6 +755,21 @@ button {
 .node__handle {
   opacity: 0;
   pointer-events: none;
+}
+
+.tool--presentation {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  color: #d9e2ff;
+}
+
+.app--presenting .topbar {
+  gap: 18px;
+  padding-inline: 24px;
+}
+
+.app--presenting .topbar__brand,
+.app--presenting .topbar__status {
+  display: none;
 }
 
 /* Resaltado durante la animación: lo aplica `packets.tsx` por clase, no React. */
@@ -613,6 +802,7 @@ button {
 
 .react-flow__edge .react-flow__edge-path {
   transition: stroke-width 0.15s, filter 0.15s;
+  filter: drop-shadow(0 1px 0 rgb(0 0 0 / 0.35));
 }
 
 .react-flow__edge.is-firing .react-flow__edge-path {

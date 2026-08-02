@@ -6,17 +6,17 @@ import type { NodeKind, Protocol } from './schema/schema.js';
  */
 
 export const kindAccent: Record<NodeKind, string> = {
-  service: '#818cf8',
-  frontend: '#38bdf8',
-  client: '#22d3ee',
-  gateway: '#a78bfa',
-  database: '#fbbf24',
-  cache: '#fb7185',
-  broker: '#34d399',
-  external: '#94a3b8',
-  job: '#f472b6',
-  storage: '#facc15',
-  component: '#c4b5fd',
+  service: '#9aa6ff',
+  frontend: '#68b9e8',
+  client: '#65c7d8',
+  gateway: '#b7a1e8',
+  database: '#d9b56c',
+  cache: '#dc8796',
+  broker: '#70c7a1',
+  external: '#a3adba',
+  job: '#d79abc',
+  storage: '#d8bf72',
+  component: '#beb3e8',
 };
 
 export const kindLabel: Record<NodeKind, string> = {
