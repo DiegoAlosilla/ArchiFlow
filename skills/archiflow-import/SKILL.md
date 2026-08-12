@@ -75,7 +75,7 @@ Repasa toda forma con `confidence` distinta de `alta`. Pistas que el importador 
 
 Antes de construir flujos, crear un inventario de microservicios y endpoints. Para detalle, usar `$archiflow-endpoints`. No contar pantallas `MiniApp` como microservicios y agrupar apariciones repetidas del mismo servicio.
 
-Cuando se solicite resumen Excel, entregar como mínimo hojas de resumen, servicios, endpoints, conexiones a revisar y auditoría de fidelidad. Incluir método, ruta conservada, descripción inferida, consumidor/dependencia, evidencia, confianza y estado de revisión; contrastar después con OpenAPI o código.
+Cuando se solicite resumen Excel, usar `$archiflow-tech-lead` y su contrato `references/xml-excel-contract.md`. Entregar como mínimo `Resumen`, `Flujos`, `Componentes por flujo`, `Dependencias por flujo`, `Endpoints` y `Auditoría XML`; incluir flujo, capa, método, ruta conservada, propósito, consumidor/endpoint consumido, Redis con todos sus mapas, base de datos, evidencia, confianza y estado de revisión. Contrastar después con OpenAPI o código.
 
 ### 5. Decidir las zonas
 

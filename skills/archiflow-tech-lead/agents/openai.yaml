@@ -1,4 +1,4 @@
 interface:
   display_name: "ArchiFlow Tech Lead"
-  short_description: "Planifica flujos, APIs y contratos técnicos"
-  default_prompt: "Use $archiflow-tech-lead para convertir este diagrama de referencia en vistas por flujo, inventario técnico y matriz de contratos."
+  short_description: "Inventaría flujos, componentes y dependencias"
+  default_prompt: "Use $archiflow-tech-lead para interpretar este XML por flujo de negocio, generar un Excel limpio de componentes, endpoints, consumos, Redis y bases de datos, y crear un diagrama individual por flujo."

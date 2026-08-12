@@ -8,10 +8,14 @@ analysis/
   01-inventario-tecnico.md
   02-trazabilidad-canal.md
   03-cobertura-swagger.md
+  04-inventario-por-flujo.xlsx
+  inventario-flujos.json
   flows/
-    <flow-id>-negocio.arch.yaml
-    <flow-id>-tecnico.arch.yaml
+    <flow-id>.arch.yaml
+    <flow-id>.svg
 ```
+
+El Excel es obligatorio cuando el usuario pida inventario tabular, conteo de endpoints o análisis XML. El flujo es la entidad raíz y el catálogo de endpoints es una vista secundaria. Seguir `xml-excel-contract.md` para su estructura y validación.
 
 ## Estructura mínima del inventario Markdown
 

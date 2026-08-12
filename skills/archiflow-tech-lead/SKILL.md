@@ -1,6 +1,6 @@
 ---
 name: archiflow-tech-lead
-description: Convierte un diagrama de arquitectura de referencia (Draw.io/XML o ArchiFlow) en una propuesta objetivo para otro canal, con trazabilidad de lo observado e inferido, vistas por flujo para negocio y tecnología, animación, inventario Markdown de microservicios/APIs/endpoints/dependencias/datos, análisis de complejidad y matriz de cobertura contra contratos OpenAPI/Swagger. Úsala al adaptar MBBK/BMU a NHBK, preparar una revisión de arquitectura, dimensionar el trabajo de un equipo o validar que los contratos implementan lo aprobado.
+description: Convierte un diagrama de arquitectura de referencia (Draw.io/XML o ArchiFlow) en una propuesta objetivo o inventario técnico trazable. Genera vistas por flujo, inventarios Markdown o Excel de servicios, capas, endpoints, consumos, Redis/mapas y bases de datos, análisis de complejidad y cobertura OpenAPI/Swagger. Úsala al interpretar dependencias de un XML, contar endpoints, adaptar MBBK/BMU a NHBK, preparar una revisión de arquitectura, dimensionar trabajo o validar contratos.
 ---
 
 # ArchiFlow Tech Lead
@@ -12,7 +12,12 @@ Transforma una referencia visual en una propuesta arquitectónica explicable y v
 - Lee `references/channel-adaptation.md` al trasladar una solución entre canales.
 - Lee `references/output-contract.md` antes de producir entregables.
 - Lee `references/swagger-coverage.md` cuando existan contratos OpenAPI/Swagger.
+- Lee `references/xml-excel-contract.md` antes de convertir un Draw.io/XML en Excel.
 - Usa `scripts/inventory.mjs` para obtener el inventario base determinista de un `.arch.yaml`; después añade interpretación y evidencia, sin alterar los conteos observados.
+- Usa `scripts/xml-inventory.mjs` después de `archiflow import --evidence` para normalizar servicios, endpoints, dependencias, Redis/mapas y almacenes desde XML.
+- Usa `scripts/flow-inventory.mjs` para convertir el inventario técnico en recorridos completos con componentes y saltos trazables por `flow_id`.
+- Usa `scripts/generate-flow-diagrams.mjs` para producir un `.arch.yaml` independiente por flujo y validarlos como conjunto.
+- Usa `scripts/build-flow-inventory-xlsx.mjs` con el runtime del skill de hojas de cálculo para crear y verificar el libro centrado en flujos. Conserva `scripts/build-inventory-xlsx.mjs` solo para compatibilidad con inventarios históricos centrados en endpoints.
 - Usa también `$arquiflow`, `$archiflow-import`, `$archiflow-design`, `$archiflow-endpoints`, `$archiflow-sequence` o `$archiflow-c4` cuando la tarea requiera sus formatos específicos.
 
 ## Flujo de trabajo
@@ -83,6 +88,8 @@ Produce el Markdown definido en `references/output-contract.md`. Separa siempre:
 
 Ordena la complejidad con una heurística transparente: volumen de endpoints, dependencias síncronas, integraciones asíncronas, persistencia, seguridad/documentos y ambigüedad. El servicio con más endpoints no siempre es el más complejo; explica el motivo del ranking.
 
+Cuando el entregable sea Excel, aplica `references/xml-excel-contract.md`: el flujo es la entidad raíz. Conserva literalmente las rutas del XML, incluye `Mapa1`, `Mapa2`, `Mapa3` y mapas adicionales, separa Redis de base de datos y genera hojas de resumen, flujos, componentes por flujo, dependencias por flujo, endpoints y auditoría. Un servicio que consume dos mapas y dos servicios debe conservar los cuatro saltos como dependencias independientes del mismo flujo.
+
 ### 7. Validar contratos
 
 Cuando existan Swagger/OpenAPI, aplica `references/swagger-coverage.md`. Ningún contrato se considera cubierto solo por parecido textual: valida método, path normalizado, propietario, request/response, seguridad y códigos relevantes. Reporta `cubierto`, `faltante`, `extra`, `incompatible` o `por-validar`.
@@ -93,6 +100,7 @@ Cuando existan Swagger/OpenAPI, aplica `references/swagger-coverage.md`. Ningún
 - Cada elemento de la propuesta tiene evidencia, confianza y decisión de construir/adaptar/reutilizar/validar.
 - Negocio y tecnología comparten los mismos flujos, pero distinta granularidad.
 - El inventario Markdown permite estimar equipo y contratos sin abrir el diagrama.
+- El inventario Excel permite filtrar por flujo, servicio, capa, endpoint, dependencia, Redis/mapa y base de datos, y sus conteos reconcilian con las hojas de detalle.
 - Las animaciones explican escenarios concretos y no ocultan pasos inferidos.
 - La matriz Swagger detecta tanto faltantes como endpoints extra.
 - Los `.arch.yaml` y el Markdown quedan junto al proyecto y pasan validación.
