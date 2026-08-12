@@ -4,6 +4,7 @@ import type {
   DiagramView,
   LayoutOverride,
   EdgeLayout,
+  Appearance,
   NodeKind,
   Operation,
   Protocol,
@@ -26,6 +27,7 @@ export interface IrZone {
   nodeIds: string[];
   /** Posición fijada a mano; gana sobre el auto-layout. */
   layout?: LayoutOverride;
+  appearance?: Appearance;
 }
 
 export interface IrNode {
@@ -44,6 +46,7 @@ export interface IrNode {
   external: boolean;
   /** Posición fijada a mano, relativa a su zona; gana sobre el auto-layout. */
   layout?: LayoutOverride;
+  appearance?: Appearance;
   /** Número de aristas incidentes. El renderer lo usa para priorizar el layout. */
   degree: number;
 }
@@ -62,6 +65,11 @@ export interface IrEdge {
   declaredOnly: boolean;
   /** Ruta de Draw.io cuando el diagrama se importó en modo fiel. */
   layout?: EdgeLayout;
+  sourceInferred: boolean;
+  targetInferred: boolean;
+  note?: string;
+  /** Posición dentro de `edges:` para poder corregirla sin reserializar el YAML. */
+  declaredIndex?: number;
 }
 
 export interface IrStep {
@@ -182,6 +190,7 @@ export function compile(diagram: Diagram): Ir {
     topics: node.topics,
     external: node.external,
     layout: node.layout,
+    appearance: node.appearance,
     degree: 0,
   }));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -196,6 +205,7 @@ export function compile(diagram: Diagram): Ir {
     label: string | undefined,
     flowId: string | undefined,
     layout?: EdgeLayout,
+    review?: { sourceInferred?: boolean; targetInferred?: boolean; note?: string; declaredIndex?: number },
   ): string => {
     const id = edgeId(from, to);
     let edge = edges.get(id);
@@ -210,6 +220,10 @@ export function compile(diagram: Diagram): Ir {
         flows: [],
         declaredOnly: flowId === undefined,
         layout,
+        sourceInferred: review?.sourceInferred ?? false,
+        targetInferred: review?.targetInferred ?? false,
+        note: review?.note,
+        declaredIndex: review?.declaredIndex,
       };
       edges.set(id, edge);
     }
@@ -228,8 +242,13 @@ export function compile(diagram: Diagram): Ir {
 
   // Las aristas explícitas se registran primero para que su protocolo declarado
   // sea el que prevalezca sobre el inferido.
-  for (const edge of diagram.edges) {
-    upsertEdge(edge.from, edge.to, edge.protocol, edge.async, edge.label, undefined, edge.layout);
+  for (const [index, edge] of diagram.edges.entries()) {
+    upsertEdge(edge.from, edge.to, edge.protocol, edge.async, edge.label, undefined, edge.layout, {
+      sourceInferred: edge.sourceInferred,
+      targetInferred: edge.targetInferred,
+      note: edge.note,
+      declaredIndex: index,
+    });
   }
 
   const flows: IrFlow[] = diagram.flows.map((flow) => {
@@ -304,6 +323,7 @@ export function compile(diagram: Diagram): Ir {
     color: zone.color ?? ZONE_COLORS[index % ZONE_COLORS.length]!,
     nodeIds: nodes.filter((node) => node.zone === zone.id).map((node) => node.id),
     layout: zone.layout,
+    appearance: zone.appearance,
   }));
 
   return {

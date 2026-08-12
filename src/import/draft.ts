@@ -1,5 +1,5 @@
 import { Document } from 'yaml';
-import { stripOrder, type ImportEvidence, type ImportedShape } from './evidence.js';
+import { stripOrder, styleTokens, type ImportEvidence, type ImportedShape } from './evidence.js';
 
 /**
  * De evidencias a un `.arch.yaml` **borrador**.
@@ -56,11 +56,19 @@ export interface Draft {
 
 export function toDraft(evidence: ImportEvidence, options: DraftOptions = {}): Draft {
   const ids = uniqueIds(evidence.shapes);
+  const referencedShapeIds = new Set(
+    evidence.links.flatMap((link) => [link.source, link.target]).filter((id): id is string => Boolean(id)),
+  );
   // Un grupo lógico viaja en `evidence.shapes` para resolver los padres, pero
   // no puede convertirse en zona: en draw.io no tenía forma ni pintura.
-  const containers = evidence.shapes.filter((shape) => shape.renderKind === 'visible-container');
+  // Una caja conectada es un elemento del flujo aunque por tamaño parezca un
+  // contenedor. Convertirla en zona hacía que desapareciera de `nodes` y
+  // dejaba aristas inválidas en diagramas corporativos grandes.
+  const containers = evidence.shapes.filter(
+    (shape) => shape.renderKind === 'visible-container' && !referencedShapeIds.has(shape.id),
+  );
   const nodes = evidence.shapes.filter((shape) =>
-    shape.renderKind !== 'visible-container' &&
+    (shape.renderKind !== 'visible-container' || referencedShapeIds.has(shape.id)) &&
     shape.renderKind !== 'invisible-group' &&
     // Si un texto es el título de un rectángulo visible, el título se dibuja
     // con el contenedor; duplicarlo como tarjeta crea el falso nodo "BADI".
@@ -135,8 +143,26 @@ export function toDraft(evidence: ImportEvidence, options: DraftOptions = {}): D
         ? 'El orden de los pasos sale de la numeración de las flechas.'
         : numbered.length > 0
           ? `Solo ${numbered.length} de ${links.length} flechas venían numeradas; el resto se ha ordenado por posición y hay que revisarlo.`
-          : 'Ninguna flecha venía numerada: los pasos van ordenados por posición en el lienzo, que es una conjetura. Revisa el orden antes de dar el diagrama por bueno.',
+          : 'Ninguna flecha venía numerada: la posición del lienzo no demuestra el orden de ejecución. Revisa los escenarios antes de animarlos.',
     );
+  }
+  const degree = new Map<string, { incoming: number; outgoing: number }>();
+  for (const link of links) {
+    if (!link.source || !link.target) continue;
+    const source = degree.get(link.source) ?? { incoming: 0, outgoing: 0 };
+    const target = degree.get(link.target) ?? { incoming: 0, outgoing: 0 };
+    source.outgoing += 1;
+    target.incoming += 1;
+    degree.set(link.source, source);
+    degree.set(link.target, target);
+  }
+  const simpleChain =
+    links.length > 0 &&
+    [...degree.values()].every((entry) => entry.incoming <= 1 && entry.outgoing <= 1) &&
+    [...degree.values()].filter((entry) => entry.incoming === 0 && entry.outgoing > 0).length === 1;
+  const createImportedFlow = numbered.length === links.length || simpleChain;
+  if (links.length > 0 && !createImportedFlow) {
+    warnings.push('Las relaciones se conservan, pero no se crea un flujo gigante sin orden verificable. Separa y nombra los escenarios antes de animarlos.');
   }
 
   const document = new Document({
@@ -150,6 +176,7 @@ export function toDraft(evidence: ImportEvidence, options: DraftOptions = {}): D
             id: ids.get(zone.id)!,
             label: zone.label,
             ...(colorFromStyle(zone.style) ? { color: colorFromStyle(zone.style) } : {}),
+            ...(appearanceFromStyle(zone.style) ? { appearance: appearanceFromStyle(zone.style) } : {}),
             layout: {
               x: Math.round(zone.x),
               y: Math.round(zone.y),
@@ -179,6 +206,7 @@ export function toDraft(evidence: ImportEvidence, options: DraftOptions = {}): D
           ...(shape.hideLabel ? ['drawio:hide-label'] : []),
         ],
         ...(shape.external ? { external: true } : {}),
+        ...(appearanceFromStyle(shape.style) ? { appearance: appearanceFromStyle(shape.style) } : {}),
         layout: {
           x,
           y,
@@ -195,6 +223,11 @@ export function toDraft(evidence: ImportEvidence, options: DraftOptions = {}): D
             ...(stripOrder(link.label) ? { label: stripOrder(link.label) } : {}),
             protocol: link.protocol,
             ...(link.async ? { async: true } : {}),
+            ...(link.sourceInferred ? { sourceInferred: true } : {}),
+            ...(link.targetInferred ? { targetInferred: true } : {}),
+            ...(link.sourceInferred || link.targetInferred
+              ? { note: `Propuesta geométrica para la flecha Draw.io ${link.id}; revisar el extremo ${[link.sourceInferred ? 'origen' : '', link.targetInferred ? 'destino' : ''].filter(Boolean).join(' y ')}.` }
+              : {}),
             ...(link.geometry || link.anchors || link.startArrow || link.endArrow
               ? {
                   layout: {
@@ -210,22 +243,26 @@ export function toDraft(evidence: ImportEvidence, options: DraftOptions = {}): D
                 }
               : {}),
           })),
-          flows: [
-            {
-              id: 'importado',
-              label: 'Recorrido importado',
-              steps: links.map((link) => {
-                const op = stripOrder(link.label);
-                return {
-                  from: ids.get(link.source ?? '')!,
-                  to: ids.get(link.target ?? '')!,
-                  ...(op ? { op } : {}),
-                  protocol: link.protocol,
-                  ...(link.async ? { async: true } : {}),
-                };
-              }),
-            },
-          ],
+          ...(createImportedFlow
+            ? {
+                flows: [
+                  {
+                    id: 'importado',
+                    label: 'Recorrido importado',
+                    steps: links.map((link) => {
+                      const op = stripOrder(link.label);
+                      return {
+                        from: ids.get(link.source ?? '')!,
+                        to: ids.get(link.target ?? '')!,
+                        ...(op ? { op } : {}),
+                        protocol: link.protocol,
+                        ...(link.async ? { async: true } : {}),
+                      };
+                    }),
+                  },
+                ],
+              }
+            : {}),
         }
       : {}),
   });
@@ -263,4 +300,50 @@ function colorFromStyle(style: string): string | undefined {
     .map((part) => part.split('='))
     .find(([key]) => key?.toLowerCase() === 'fillcolor' || key?.toLowerCase() === 'strokecolor')?.[1];
   return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(token ?? '') ? token : undefined;
+}
+
+/** Traduce los tokens visuales portables de mxGraph sin guardar imágenes. */
+function appearanceFromStyle(style: string) {
+  const tokens = styleTokens(style);
+  const color = (key: string): string | undefined => {
+    const value = tokens.get(key);
+    return value && /^(?:none|#[0-9a-f]{3}|#[0-9a-f]{6})$/i.test(value) ? value : undefined;
+  };
+  const number = (key: string): number | undefined => {
+    const value = Number(tokens.get(key));
+    return Number.isFinite(value) ? value : undefined;
+  };
+  const align = tokens.get('align');
+  const verticalAlign = tokens.get('verticalalign');
+  const fontStyle = Number(tokens.get('fontstyle') ?? 0);
+  const rounded = tokens.get('rounded') === '1';
+  const arcSize = number('arcsize');
+  const shape = tokens.has('module') || tokens.get('shape') === 'module'
+    ? 'module'
+    : tokens.has('umlframe') || tokens.get('shape') === 'umlFrame'
+      ? 'uml-frame'
+      : tokens.has('note') || tokens.get('shape') === 'note'
+        ? 'note'
+        : undefined;
+  const appearance = {
+    ...(color('fillcolor') ? { fill: color('fillcolor') } : {}),
+    ...(color('strokecolor') ? { stroke: color('strokecolor') } : {}),
+    ...(color('fontcolor') ? { text: color('fontcolor') } : {}),
+    ...(number('fontsize') ? { fontSize: number('fontsize') } : {}),
+    ...(tokens.get('fontfamily') ? { fontFamily: tokens.get('fontfamily') } : {}),
+    ...(fontStyle & 1 ? { bold: true } : {}),
+    ...(fontStyle & 2 ? { italic: true } : {}),
+    ...(rounded ? { radius: Math.max(3, Math.round((arcSize ?? 15) / 5)) } : {}),
+    ...(number('opacity') !== undefined ? { opacity: Math.max(0, Math.min(1, number('opacity')! / 100)) } : {}),
+    ...(tokens.get('dashed') === '1' ? { dashed: true } : {}),
+    ...(align === 'left' || align === 'center' || align === 'right' ? { align } : {}),
+    ...(verticalAlign === 'top' || verticalAlign === 'middle' || verticalAlign === 'bottom'
+      ? { verticalAlign }
+      : {}),
+    ...(shape ? { shape } : {}),
+    ...(number('strokewidth') ? { strokeWidth: number('strokewidth') } : {}),
+    ...(shape === 'uml-frame' && number('width') ? { frameWidth: number('width') } : {}),
+    ...(shape === 'uml-frame' && number('height') ? { frameHeight: number('height') } : {}),
+  };
+  return Object.keys(appearance).length > 0 ? appearance : undefined;
 }

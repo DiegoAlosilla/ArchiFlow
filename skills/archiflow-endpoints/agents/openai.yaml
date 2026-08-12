@@ -1,0 +1,4 @@
+interface:
+  display_name: "ArchiFlow Endpoints"
+  short_description: "Mapea APIs y endpoints por microservicio"
+  default_prompt: "Usa $archiflow-endpoints para identificar microservicios, endpoints y dependencias antes de diagramar."

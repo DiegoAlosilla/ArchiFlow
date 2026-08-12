@@ -33,6 +33,29 @@ export function useMutations(entry: DiagramEntry | null): MutationClient {
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const inFlight = useRef(0);
 
+  const post = useCallback(async (url: string, body: unknown): Promise<MutateResponse> => {
+    let failure: unknown;
+    // Una reconstrucción local o una reconexión del navegador puede cortar una
+    // petición durante unos milisegundos. Reintentar una vez evita exponer el
+    // poco útil `Failed to fetch`; el servidor serializa la operación.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const text = await response.text();
+        const result = text ? JSON.parse(text) as MutateResponse : { ok: false, reason: 'failed' as const, error: `respuesta vacía (${response.status})` };
+        return result;
+      } catch (cause) {
+        failure = cause;
+        if (attempt === 0) await new Promise((resolve) => window.setTimeout(resolve, 180));
+      }
+    }
+    throw failure;
+  }, []);
+
   // El servidor manda mientras no haya nada en vuelo. Si lo hay, la revisión
   // buena es la que devolvió la última mutación, no la del payload.
   useEffect(() => {
@@ -54,12 +77,7 @@ export function useMutations(entry: DiagramEntry | null): MutationClient {
         };
 
         try {
-          const response = await fetch('/api/mutate', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(request),
-          });
-          const result = (await response.json()) as MutateResponse;
+          const result = await post('/api/mutate', request);
 
           if (result.ok && result.revision) {
             revision.current = result.revision;
@@ -75,7 +93,7 @@ export function useMutations(entry: DiagramEntry | null): MutationClient {
           );
           return false;
         } catch (cause) {
-          setError(`No se pudo guardar: ${(cause as Error).message}`);
+          setError('El servidor local se desconectó y no se pudo guardar. Recarga ArquiFlow; el archivo en disco no fue modificado.');
           return false;
         } finally {
           inFlight.current -= 1;
@@ -87,19 +105,34 @@ export function useMutations(entry: DiagramEntry | null): MutationClient {
       queue.current = next.catch(() => undefined);
       return next;
     },
-    [entry],
+    [entry, post],
   );
 
-  const history = useCallback(async (action: 'undo' | 'redo') => {
-    if (!entry) return false;
-    try {
-      const response = await fetch(`/api/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: entry.id }) });
-      const result = (await response.json()) as MutateResponse;
-      if (result.ok && result.revision) { revision.current = result.revision; setError(null); return true; }
-      setError(result.error ?? `No se pudo ${action === 'undo' ? 'deshacer' : 'rehacer'}`);
-    } catch (cause) { setError(`No se pudo actualizar el historial: ${(cause as Error).message}`); }
-    return false;
-  }, [entry]);
+  const history = useCallback((action: 'undo' | 'redo'): Promise<boolean> => {
+    if (!entry) return Promise.resolve(false);
+    const run = async (): Promise<boolean> => {
+      inFlight.current += 1;
+      setSaving(true);
+      try {
+        const result = await post(`/api/${action}`, { id: entry.id });
+        if (result.ok && result.revision) {
+          revision.current = result.revision;
+          setError(null);
+          return true;
+        }
+        setError(result.error ?? `No se pudo ${action === 'undo' ? 'deshacer' : 'rehacer'}`);
+      } catch {
+        setError('El servidor local se desconectó. Recarga ArquiFlow para continuar; el historial no se modificó.');
+      } finally {
+        inFlight.current -= 1;
+        if (inFlight.current === 0) setSaving(false);
+      }
+      return false;
+    };
+    const next = queue.current.then(run, run);
+    queue.current = next.catch(() => undefined);
+    return next;
+  }, [entry, post]);
 
   return { mutate, error, dismissError: () => setError(null), saving, undo: () => history('undo'), redo: () => history('redo') };
 }

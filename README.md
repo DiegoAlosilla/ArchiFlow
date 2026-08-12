@@ -33,12 +33,15 @@ El lienzo siempre es editable: al seleccionar un objeto aparece el inspector. Pu
 - Añadir y borrar nodos, zonas y flujos.
 - Arrastrar de un conector a otro para **añadir un paso** al flujo activo. No se dibujan aristas: las aristas se infieren de los pasos, así que ofrecer un gesto de "dibujar flecha" mentiría sobre el modelo.
 - Reordenar y editar los pasos de un flujo.
+- Importar `.drawio` o `.xml` desde **Importar**, conservando geometría, colores, anclas y puntos intermedios.
+- Activar **Animar ruta** y seleccionar cuadros consecutivos para construir el recorrido sin arrastrar conectores.
+- Cambiar entre tema claro y oscuro sin alterar los colores propios del diagrama.
 
 Lo importante de cómo está hecho: la web **no reescribe el fichero entero**. Envía mutaciones semánticas que el servidor aplica sobre el AST del YAML, de modo que **tus comentarios, el orden y el formato sobreviven** — un retoque produce un diff de una línea. Antes de escribir se valida el resultado completo; si la edición dejaría el diagrama inválido, no se toca el disco y se te dice por qué.
 
 Puedes tener el fichero abierto a la vez en la web y en tu editor de texto: cada escritura comprueba una huella del contenido y, si cambió por otra vía, la web avisa en vez de pisarlo.
 
-**Aún no hay deshacer** — está diseñado y pendiente de implementar (ver [HANDOFF.md](HANDOFF.md), P2). Hasta entonces el respaldo es git, que es coherente con tratar el diagrama como código.
+La barra incluye deshacer y rehacer para los cambios realizados durante la sesión. Git sigue siendo el historial persistente del diagrama.
 
 ## Cómo es un diagrama
 
@@ -107,10 +110,12 @@ da a la vez la arista, el nombre del destino y hasta la zona.
 
 ## Instalar las skills de ArchiFlow
 
-El repositorio incluye cuatro skills: `archiflow-design`, `archiflow-import`,
-`archiflow-scan` y `archiflow-dictation`. Instálalas después de clonar el
-repositorio para que el asistente pueda crear diagramas desde contexto,
-dictado, código o ficheros draw.io/ArchiMate.
+El repositorio incluye ocho skills: `archiflow-design`, `archiflow-import`,
+`archiflow-scan`, `archiflow-dictation`, `archiflow-endpoints`, `archiflow-c4`
+y `archiflow-sequence`, además de `archiflow-tech-lead`. Instálalas después de clonar el repositorio para que
+el asistente pueda importar con fidelidad, inventariar endpoints y separar
+vistas C4 y secuencias sin mezclar niveles, o preparar una propuesta técnica
+trazable y contrastarla con contratos OpenAPI.
 
 ```bash
 git clone https://github.com/DiegoAlosilla/ArchiFlow.git

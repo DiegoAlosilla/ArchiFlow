@@ -8,8 +8,9 @@ import sirv from 'sirv';
 import pc from 'picocolors';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { applyMutations } from '../edit/mutations.js';
+import { importDiagram, toDraft } from '../import/index.js';
 import { parseDiagram } from '../schema/parse.js';
-import type { DiagramsPayload, MutateRequest, MutateResponse, ServerMessage } from '../shared/index.js';
+import type { DiagramsPayload, ImportRequest, ImportResponse, MutateRequest, MutateResponse, ServerMessage } from '../shared/index.js';
 import { isDiagramFile, loadAllDiagrams, revisionOf } from './loader.js';
 
 /**
@@ -44,6 +45,15 @@ export interface ServeOptions {
 export async function serve({ root, port, open }: ServeOptions): Promise<void> {
   type History = { stack: string[]; index: number };
   const histories = new Map<string, History>();
+  // Toda escritura comparte una única cola. Un Ctrl+Z que llegue mientras se
+  // está guardando un arrastre no puede restaurar una instantánea a mitad de
+  // la mutación ni competir con el watcher del fichero.
+  let editQueue: Promise<void> = Promise.resolve();
+  const serializeEdit = <T>(operation: () => Promise<T>): Promise<T> => {
+    const next = editQueue.then(operation, operation);
+    editQueue = next.then(() => undefined, () => undefined);
+    return next;
+  };
   const historyState = (): DiagramsPayload['history'] =>
     Object.fromEntries([...histories].map(([id, history]) => [id, { canUndo: history.index > 0, canRedo: history.index < history.stack.length - 1 }]));
   let payload: DiagramsPayload = { root, diagrams: [], history: {}, updatedAt: Date.now() };
@@ -200,10 +210,57 @@ export async function serve({ root, port, open }: ServeOptions): Promise<void> {
         };
         try {
           const request = JSON.parse(await readBody(req)) as MutateRequest;
-          const result = await mutate(request);
+          const result = await serializeEdit(() => mutate(request));
           json(result, result.ok ? 200 : result.reason === 'stale' ? 409 : 422);
         } catch (error) {
           json({ ok: false, reason: 'failed', error: (error as Error).message }, 400);
+        }
+      })();
+      return;
+    }
+
+    if (req.url === '/api/import' && req.method === 'POST') {
+      void (async () => {
+        const json = (value: ImportResponse, status: number) => {
+          res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify(value));
+        };
+        try {
+          const request = JSON.parse(await readBody(req)) as ImportRequest;
+          if (!request.name || !request.source) throw new Error('falta el nombre o el contenido del diagrama');
+          const evidence = importDiagram(request.source);
+          const draft = toDraft(evidence, { name: path.basename(request.name).replace(/\.(?:drawio|xml)$/i, '') });
+          const parsed = parseDiagram(draft.yaml);
+          if (!parsed.ok) {
+            json({ ok: false, error: 'la importación produjo un borrador inválido' }, 422);
+            return;
+          }
+
+          const stem = path
+            .basename(request.name)
+            .replace(/\.(?:drawio|xml)$/i, '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-zA-Z0-9._-]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'diagrama-importado';
+          let file = `${stem}.arch.yaml`;
+          let suffix = 2;
+          while (existsSync(path.join(root, file))) file = `${stem}-${suffix++}.arch.yaml`;
+          await writeFile(path.join(root, file), draft.yaml, 'utf8');
+          await reload(true);
+          json({
+            ok: true,
+            file,
+            warnings: draft.warnings,
+            summary: {
+              pages: evidence.pages.length,
+              shapes: evidence.shapes.length,
+              containers: evidence.shapes.filter((shape) => shape.container).length,
+              links: evidence.links.length,
+            },
+          }, 200);
+        } catch (error) {
+          json({ ok: false, error: (error as Error).message }, 400);
         }
       })();
       return;
@@ -214,7 +271,7 @@ export async function serve({ root, port, open }: ServeOptions): Promise<void> {
         try {
           const { id } = JSON.parse(await readBody(req)) as { id?: string };
           if (!id) throw new Error('falta id');
-          const result = await restoreHistory(id, req.url === '/api/undo' ? -1 : 1);
+          const result = await serializeEdit(() => restoreHistory(id, req.url === '/api/undo' ? -1 : 1));
           res.writeHead(result.ok ? 200 : 422, { 'content-type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify(result));
         } catch (error) {

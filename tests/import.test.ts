@@ -186,6 +186,31 @@ describe('importar de draw.io', () => {
     expect(parsed.diagram?.edges[0]?.layout?.points).toHaveLength(2);
   });
 
+  it('no confunde dashed=0 con una conexión asíncrona', () => {
+    const evidence = fromDrawio(`<mxGraphModel><root>
+      <mxCell id="0" /><mxCell id="1" parent="0" />
+      <mxCell id="a" value="A" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="40" as="geometry" /></mxCell>
+      <mxCell id="b" value="B" vertex="1" parent="1"><mxGeometry x="200" y="0" width="100" height="40" as="geometry" /></mxCell>
+      <mxCell id="e" edge="1" parent="1" source="a" target="b" style="dashed=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    </root></mxGraphModel>`);
+    expect(evidence.links[0]?.async).toBe(false);
+  });
+
+  it('mantiene como nodo una caja conectada aunque parezca contenedor', () => {
+    const evidence = fromDrawio(`<mxGraphModel><root>
+      <mxCell id="0" /><mxCell id="1" parent="0" />
+      <mxCell id="screen" value="Pantalla" style="fillColor=#ffff88;strokeColor=#36393d;" vertex="1" parent="1"><mxGeometry x="0" y="0" width="320" height="180" as="geometry" /></mxCell>
+      <mxCell id="api" value="API" vertex="1" parent="1"><mxGeometry x="500" y="0" width="100" height="40" as="geometry" /></mxCell>
+      <mxCell id="e" edge="1" parent="1" source="screen" target="api"><mxGeometry relative="1" as="geometry" /></mxCell>
+    </root></mxGraphModel>`);
+    const parsed = parseDiagram(toDraft(evidence).yaml);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.diagram?.nodes.find((node) => node.label === 'Pantalla')).toMatchObject({
+      appearance: { fill: '#ffff88', stroke: '#36393d' },
+    });
+    expect(parsed.diagram?.zones.find((zone) => zone.label === 'Pantalla')).toBeUndefined();
+  });
+
   it('lee la etiqueta que draw.io guarda en una celda hija', async () => {
     const evidence = fromDrawio(await readFile(fixture, 'utf8'));
     const first = evidence.links.find((link) => link.id === 'e1');
@@ -231,7 +256,40 @@ describe('importar de draw.io', () => {
       <mxCell id="e" value="llama" edge="1" parent="1" source="a" target="b"><mxGeometry relative="1" as="geometry" /></mxCell>
     </root></mxGraphModel>`);
     const draft = toDraft(sinNumerar);
-    expect(draft.warnings.some((warning) => /conjetura/.test(warning))).toBe(true);
+    expect(draft.warnings.some((warning) => /no demuestra el orden/.test(warning))).toBe(true);
+    // Una cadena simple sí tiene un único orden posible y puede animarse.
+    expect(parseDiagram(draft.yaml).diagram?.flows).toHaveLength(1);
+  });
+
+  it('no convierte un grafo ramificado sin numeración en un flujo gigante', () => {
+    const evidence = fromDrawio(`<mxGraphModel><root>
+      <mxCell id="0" /><mxCell id="1" parent="0" />
+      <mxCell id="a" value="A" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="40" as="geometry" /></mxCell>
+      <mxCell id="b" value="B" vertex="1" parent="1"><mxGeometry x="200" y="0" width="100" height="40" as="geometry" /></mxCell>
+      <mxCell id="c" value="C" vertex="1" parent="1"><mxGeometry x="200" y="100" width="100" height="40" as="geometry" /></mxCell>
+      <mxCell id="e1" edge="1" parent="1" source="a" target="b"><mxGeometry relative="1" as="geometry" /></mxCell>
+      <mxCell id="e2" edge="1" parent="1" source="a" target="c"><mxGeometry relative="1" as="geometry" /></mxCell>
+    </root></mxGraphModel>`);
+    const draft = toDraft(evidence);
+    const parsed = parseDiagram(draft.yaml);
+    expect(parsed.diagram?.edges).toHaveLength(2);
+    expect(parsed.diagram?.flows).toHaveLength(0);
+    expect(draft.warnings.some((warning) => /flujo gigante/.test(warning))).toBe(true);
+  });
+
+  it('conserva la figura módulo y marca los extremos propuestos por geometría', () => {
+    const evidence = fromDrawio(`<mxGraphModel><root>
+      <mxCell id="0" /><mxCell id="1" parent="0" />
+      <mxCell id="a" value="API UX" style="shape=module;strokeWidth=2;" vertex="1" parent="1"><mxGeometry x="0" y="0" width="120" height="60" as="geometry" /></mxCell>
+      <mxCell id="b" value="MS UX" style="shape=module;" vertex="1" parent="1"><mxGeometry x="240" y="0" width="120" height="60" as="geometry" /></mxCell>
+      <mxCell id="e" edge="1" parent="1" source="a"><mxGeometry relative="1" as="geometry"><mxPoint x="240" y="30" as="targetPoint" /></mxGeometry></mxCell>
+    </root></mxGraphModel>`);
+    expect(evidence.links[0]).toMatchObject({ source: 'a', target: 'b', targetInferred: true });
+    const parsed = parseDiagram(toDraft(evidence).yaml);
+    expect(parsed.diagram?.nodes.find((node) => node.id === 'api-ux')?.appearance).toMatchObject({ shape: 'module', strokeWidth: 2 });
+    expect(parsed.diagram?.edges[0]).toMatchObject({ targetInferred: true });
+    expect(parsed.issues.filter((issue) => issue.level === 'warning')).toHaveLength(1);
+    expect(parsed.issues[0]?.path).toEqual(['edges', 0]);
   });
 
   it('eleva grupos y entiende iconos de librería sin convertirlos en decoración', () => {

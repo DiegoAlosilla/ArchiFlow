@@ -307,15 +307,21 @@ export function fromDrawio(source: string): ImportEvidence {
     for (const cell of cells) {
       if (cell.edge) {
         const label = cell.label || edgeLabels.get(cell.id) || '';
+        const explicitSource = resolveEndpoint(cell.source);
+        const explicitTarget = resolveEndpoint(cell.target);
+        const inferredSource = explicitSource ? undefined : resolvePointEndpoint(cell.geometry.sourcePoint);
+        const inferredTarget = explicitTarget ? undefined : resolvePointEndpoint(cell.geometry.targetPoint);
         evidence.links.push({
           id: cell.id,
           label,
-          source: resolveEndpoint(cell.source) ?? resolvePointEndpoint(cell.geometry.sourcePoint),
-          target: resolveEndpoint(cell.target) ?? resolvePointEndpoint(cell.geometry.targetPoint),
+          source: explicitSource ?? inferredSource,
+          target: explicitTarget ?? inferredTarget,
+          ...(inferredSource ? { sourceInferred: true } : {}),
+          ...(inferredTarget ? { targetInferred: true } : {}),
           parent: cell.parent && cell.parent !== '1' ? cell.parent : undefined,
           style: cell.style,
           protocol: guessProtocol(label, cell.style),
-          async: styleTokens(cell.style).has('dashed') || /event|publish|consume|async/i.test(label),
+          async: styleTokens(cell.style).get('dashed') === '1' || /event|publish|consume|async/i.test(label),
           order: parseOrder(label),
           geometry: {
             ...(cell.geometry.sourcePoint ? { sourcePoint: cell.geometry.sourcePoint } : {}),

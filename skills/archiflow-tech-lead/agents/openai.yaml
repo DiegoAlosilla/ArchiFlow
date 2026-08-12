@@ -1,0 +1,4 @@
+interface:
+  display_name: "ArchiFlow Tech Lead"
+  short_description: "Inventaría flujos, componentes y dependencias"
+  default_prompt: "Use $archiflow-tech-lead para interpretar este XML por flujo de negocio, generar un Excel limpio de componentes, endpoints, consumos, Redis y bases de datos, y crear un diagrama individual por flujo."

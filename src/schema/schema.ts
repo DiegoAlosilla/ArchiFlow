@@ -93,6 +93,37 @@ export const LayoutSchema = z
   .strict();
 export type LayoutOverride = z.infer<typeof LayoutSchema>;
 
+/**
+ * Presentación explícita de una forma importada.
+ *
+ * El modelo semántico sigue viviendo en `kind`, `zone`, `provides` y
+ * `flows`; esta capa solo evita que un intercambio con Draw.io pierda los
+ * colores, tipografía y alineación que el autor ya decidió.
+ */
+const Paint = z.string().regex(/^(?:none|#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6})$/);
+export const AppearanceSchema = z
+  .object({
+    fill: Paint.optional(),
+    stroke: Paint.optional(),
+    text: Paint.optional(),
+    fontSize: z.number().positive().optional(),
+    fontFamily: z.string().optional(),
+    bold: z.boolean().optional(),
+    italic: z.boolean().optional(),
+    radius: z.number().nonnegative().optional(),
+    opacity: z.number().min(0).max(1).optional(),
+    dashed: z.boolean().optional(),
+    align: z.enum(['left', 'center', 'right']).optional(),
+    verticalAlign: z.enum(['top', 'middle', 'bottom']).optional(),
+    /** Silueta portable del shape de mxGraph. */
+    shape: z.enum(['rectangle', 'module', 'uml-frame', 'note']).optional(),
+    strokeWidth: z.number().positive().optional(),
+    frameWidth: z.number().positive().optional(),
+    frameHeight: z.number().positive().optional(),
+  })
+  .strict();
+export type Appearance = z.infer<typeof AppearanceSchema>;
+
 /** Geometría de una conexión importada. Las coordenadas son de lienzo absoluto. */
 export const PointSchema = z.object({ x: z.number(), y: z.number() }).strict();
 export const EdgeLayoutSchema = z
@@ -124,6 +155,7 @@ export const ZoneSchema = z
       .optional(),
     /** Posición y tamaño fijados a mano. Absolutos. */
     layout: LayoutSchema.optional(),
+    appearance: AppearanceSchema.optional(),
   })
   .strict();
 export type Zone = z.infer<typeof ZoneSchema>;
@@ -152,6 +184,7 @@ export const NodeSchema = z
     external: z.boolean().default(false),
     /** Posición fijada a mano, relativa a su zona. */
     layout: LayoutSchema.optional(),
+    appearance: AppearanceSchema.optional(),
   })
   .strict();
 export type DiagramNode = z.infer<typeof NodeSchema>;
@@ -225,6 +258,10 @@ export const EdgeSchema = z
     label: z.string().optional(),
     protocol: z.enum(PROTOCOLS).default('http'),
     async: z.boolean().default(false),
+    /** Extremos propuestos por proximidad porque Draw.io los dejó sueltos. */
+    sourceInferred: z.boolean().default(false),
+    targetInferred: z.boolean().default(false),
+    note: z.string().optional(),
     /** Ruta y anclajes preservados desde Draw.io; no se autoenrutan. */
     layout: EdgeLayoutSchema.optional(),
   })
