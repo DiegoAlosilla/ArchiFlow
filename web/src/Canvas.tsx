@@ -10,6 +10,7 @@ import {
   applyNodeChanges,
   useReactFlow,
   type Connection,
+  type OnReconnect,
   type Node,
   type NodeChange,
   type OnNodeDrag,
@@ -45,9 +46,13 @@ interface Props {
   mutate: (...mutations: Mutation[]) => Promise<boolean>;
   animation: AnimationSettings;
   presentation?: boolean;
+  pathMode?: boolean;
+  pathStart?: string | null;
+  onPathNodeClick?: (nodeId: string) => boolean;
+  focusRequest?: { selection: Selection; nonce: number } | null;
 }
 
-function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mutate, animation, presentation = false }: Props) {
+function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mutate, animation, presentation = false, pathMode = false, pathStart = null, onPathNodeClick, focusRequest }: Props) {
   const [base, setBase] = useState<LaidOutGraph | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const { fitView } = useReactFlow();
@@ -114,6 +119,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
           (selection?.kind === 'node' && selection.id === node.id) ||
           (selection?.kind === 'zone' && `zone:${selection.id}` === node.id);
         if (isSelected) classes.push('is-selected');
+        if (pathMode && node.id === pathStart) classes.push('is-path-start');
 
         return {
           ...node,
@@ -127,7 +133,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         };
       });
     },
-    [flow, editing, selection, onResizeEnd],
+    [flow, editing, selection, onResizeEnd, pathMode, pathStart],
   );
 
   useEffect(() => {
@@ -162,15 +168,56 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
     };
   }, [presentation, fitView]);
 
+  useEffect(() => {
+    const target = focusRequest?.selection;
+    if (!target || !computed) return;
+    const ids = target.kind === 'node'
+      ? [target.id]
+      : target.kind === 'zone'
+        ? [`zone:${target.id}`]
+        : target.kind === 'edge'
+          ? (() => {
+              const edge = ir.edges.find((candidate) => candidate.declaredIndex === target.index);
+              return edge ? [edge.source, edge.target] : [];
+            })()
+          : [];
+    if (ids.length === 0) return;
+    const frame = requestAnimationFrame(() => {
+      void fitView({ nodes: ids.map((id) => ({ id })), padding: 0.8, duration: 380, maxZoom: 1.35 });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [computed, fitView, focusRequest, ir.edges]);
+
   const edges = useMemo(() => {
     if (!computed) return [];
-    if (!flow) return computed.edges;
-    const active = new Set(flow.steps.map((step) => step.edgeId));
-    return computed.edges.map((edge) => ({
-      ...edge,
-      className: active.has(edge.id) ? 'is-in-flow' : 'is-out-of-flow',
-    }));
-  }, [computed, flow]);
+    const active = flow ? new Set(flow.steps.map((step) => step.edgeId)) : null;
+    return computed.edges.map((edge) => {
+      const classes = [];
+      if (active) classes.push(active.has(edge.id) ? 'is-in-flow' : 'is-out-of-flow');
+      const declaredIndex = (edge.data as EdgeData | undefined)?.edge.declaredIndex;
+      const isSelected = selection?.kind === 'edge' && declaredIndex === selection.index;
+      if (isSelected) classes.push('is-selected');
+      return {
+        ...edge,
+        className: classes.join(' ') || undefined,
+        selected: isSelected,
+        reconnectable: editing,
+        data: {
+          ...edge.data,
+          editing,
+          onRouteChange: (index: number, points: Array<{ x: number; y: number }>) => {
+            const current = ir.edges.find((candidate) => candidate.declaredIndex === index);
+            if (!current) return;
+            void mutate({
+              op: 'edge.update',
+              index,
+              patch: { layout: { ...current.layout, points } },
+            });
+          },
+        },
+      };
+    });
+  }, [computed, editing, flow, ir.edges, mutate, selection]);
   const selectedStep = selection?.kind === 'step' ? ir.flows.find((candidate) => candidate.id === selection.flowId)?.steps[selection.index] : undefined;
 
   const onNodesChange = useCallback(
@@ -213,6 +260,38 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
     [flow, mutate, onSelect],
   );
 
+  const onReconnect = useCallback<OnReconnect>(
+    (oldEdge, connection) => {
+      const edge = (oldEdge.data as EdgeData | undefined)?.edge;
+      if (!edge || edge.declaredIndex === undefined || !connection.source || !connection.target) return;
+      const anchor = (handle: string | null | undefined) => {
+        if (handle === 'top') return { x: 0.5, y: 0 };
+        if (handle === 'right') return { x: 1, y: 0.5 };
+        if (handle === 'bottom') return { x: 0.5, y: 1 };
+        if (handle === 'left') return { x: 0, y: 0.5 };
+        return undefined;
+      };
+      const { sourcePoint: _sourcePoint, targetPoint: _targetPoint, ...layout } = edge.layout ?? {};
+      void mutate({
+        op: 'edge.update',
+        index: edge.declaredIndex,
+        patch: {
+          from: connection.source,
+          to: connection.target,
+          sourceInferred: undefined,
+          targetInferred: undefined,
+          note: undefined,
+          layout: {
+            ...layout,
+            sourceAnchor: anchor(connection.sourceHandle) ?? edge.layout?.sourceAnchor,
+            targetAnchor: anchor(connection.targetHandle) ?? edge.layout?.targetAnchor,
+          },
+        },
+      });
+    },
+    [mutate],
+  );
+
   if (!computed) {
     return (
       <div className="canvas canvas--loading">
@@ -223,7 +302,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
   }
 
   return (
-    <div className={`canvas${editing ? ' canvas--editing' : ''}${presentation ? ' canvas--presentation' : ''}`}>
+    <div className={`canvas${editing ? ' canvas--editing' : ''}${presentation ? ' canvas--presentation' : ''}${ir.meta.layoutMode === 'faithful' ? ' canvas--faithful' : ''}`}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -233,18 +312,22 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
-        onNodeClick={(_event, node) =>
-          onSelect(
-            node.type === 'zone'
-              ? { kind: 'zone', id: node.id.slice('zone:'.length) }
-              : { kind: 'node', id: node.id },
-          )
-        }
+        onReconnect={onReconnect}
+        reconnectRadius={6}
+        onNodeClick={(_event, node) => {
+          if (node.type !== 'zone' && onPathNodeClick?.(node.id)) return;
+          onSelect(node.type === 'zone' ? { kind: 'zone', id: node.id.slice('zone:'.length) } : { kind: 'node', id: node.id });
+        }}
+        onEdgeClick={(_event, edge) => {
+          const index = (edge.data as EdgeData | undefined)?.edge.declaredIndex;
+          if (index !== undefined) onSelect({ kind: 'edge', index });
+        }}
         onPaneClick={() => onSelect(null)}
         nodesDraggable={editing}
         nodesConnectable={editing}
         elementsSelectable={editing}
-        edgesFocusable={false}
+        edgesFocusable={editing}
+        edgesReconnectable={editing}
         // En modo suelto cualquier conector sirve de origen y de destino, que
         // es lo que permite tener uno por lado sin duplicarlos.
         connectionMode={ConnectionMode.Loose}
@@ -256,10 +339,10 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
       >
         {/* Cuadrícula en dos niveles: la fina para alinear al arrastrar, la
             gruesa para dar escala sin saturar la vista. */}
-        <Background id="fina" variant={BackgroundVariant.Lines} gap={24} lineWidth={1} color="#1b1e22" />
-        <Background id="gruesa" variant={BackgroundVariant.Lines} gap={120} lineWidth={1} color="#24282e" />
+        <Background id="fina" variant={BackgroundVariant.Lines} gap={24} lineWidth={1} color="var(--grid-fine)" />
+        <Background id="gruesa" variant={BackgroundVariant.Lines} gap={120} lineWidth={1} color="var(--grid-major)" />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable nodeStrokeWidth={2} maskColor="rgba(2,6,23,0.7)" />
+        <MiniMap pannable zoomable nodeStrokeWidth={2} maskColor="var(--minimap-mask)" />
         <FlowPackets flow={flow} animation={animation} onStepChange={onStepChange} />
         {selectedStep && (selectedStep.request || selectedStep.response) && (
           <div className="contract-panel">

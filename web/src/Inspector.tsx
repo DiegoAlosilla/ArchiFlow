@@ -38,7 +38,70 @@ export function Inspector({ ir, selection, onSelect, mutate }: Props) {
   if (selection.kind === 'node') return <NodeInspector {...{ ir, selection, onSelect, mutate }} />;
   if (selection.kind === 'zone') return <ZoneInspector {...{ ir, selection, onSelect, mutate }} />;
   if (selection.kind === 'flow') return <FlowInspector {...{ ir, selection, onSelect, mutate }} />;
+  if (selection.kind === 'edge') return <EdgeInspector {...{ ir, selection, onSelect, mutate }} />;
   return <StepInspector {...{ ir, selection, onSelect, mutate }} />;
+}
+
+function EdgeInspector({ ir, selection, mutate }: Props) {
+  if (selection?.kind !== 'edge') return null;
+  const edge = ir.edges.find((candidate) => candidate.declaredIndex === selection.index);
+  if (!edge) return <div className="inspector inspector--empty"><p>Esta conexión ya no existe.</p></div>;
+  const patch = (fields: Record<string, unknown>) => void mutate({ op: 'edge.update', index: selection.index, patch: fields });
+  const nodeOptions = ir.nodes.map((node) => ({ value: node.id, label: node.label }));
+  const styleParts = (edge.layout?.style ?? '').split(';').filter(Boolean);
+  const styleValue = (key: string) => styleParts
+    .map((part) => part.split('='))
+    .find(([candidate]) => candidate?.toLowerCase() === key.toLowerCase())?.[1];
+  const updateStyle = (key: string, value: string | number | undefined) => {
+    const next = styleParts.filter((part) => part.split('=')[0]?.toLowerCase() !== key.toLowerCase());
+    if (value !== undefined && value !== '') next.push(`${key}=${value}`);
+    patch({ layout: { ...edge.layout, style: `${next.join(';')};` } });
+  };
+  const clearPoints = () => {
+    const { points: _points, ...layout } = edge.layout ?? {};
+    patch({ layout });
+  };
+  return (
+    <div className="inspector">
+      <header className="inspector__header"><span className="inspector__kind">Conexión {selection.index + 1}</span></header>
+      {(edge.sourceInferred || edge.targetInferred) && (
+        <div className="inspector__proposal">
+          <b>Propuesta de ArquiFlow</b>
+          <p>{edge.note ?? 'Draw.io dejó un extremo sin conectar. Se eligió la caja más cercana.'}</p>
+          <button type="button" className="inspector__reset" onClick={() => patch({ sourceInferred: undefined, targetInferred: undefined, note: undefined })}>
+            Aceptar propuesta
+          </button>
+        </div>
+      )}
+      <SelectField label="Desde" value={edge.source} options={nodeOptions} onCommit={(value) => patch({ from: value, sourceInferred: undefined })} />
+      <SelectField label="Hasta" value={edge.target} options={nodeOptions} onCommit={(value) => patch({ to: value, targetInferred: undefined })} />
+      <TextField label="Etiqueta" value={edge.labels[0]} mono onCommit={(value) => patch({ label: value })} />
+      <SelectField label="Protocolo" value={edge.protocol} options={PROTOCOL_OPTIONS} onCommit={(value) => patch({ protocol: value })} />
+      <CheckboxField label="Asíncrona" value={edge.async} onCommit={(value) => patch({ async: value ? true : undefined })} />
+      <div className="inspector__section-title">Línea</div>
+      <TextField label="Color" value={styleValue('strokeColor')} mono placeholder="#808080" onCommit={(value) => updateStyle('strokeColor', value)} />
+      <NumberField label="Grosor" value={Number(styleValue('strokeWidth')) || 1} onCommit={(value) => updateStyle('strokeWidth', value)} />
+      <SelectField
+        label="Punta final"
+        value={edge.layout?.endArrow ?? 'open'}
+        options={[
+          { value: 'open', label: 'Abierta' },
+          { value: 'block', label: 'Bloque' },
+          { value: 'diamond', label: 'Diamante' },
+          { value: 'none', label: 'Sin punta' },
+        ]}
+        onCommit={(value) => patch({ layout: { ...edge.layout, endArrow: value } })}
+      />
+      <div className="inspector__route">
+        <b>Editar recorrido</b>
+        <p>{edge.layout?.points?.length ?? 0} puntos importados. En el lienzo, arrastra los cuadrados azules; pulsa un rombo blanco para crear otro codo.</p>
+        <button type="button" className="inspector__reset" disabled={!edge.layout?.points?.length} onClick={clearPoints}>
+          Quitar puntos de control
+        </button>
+      </div>
+      <div className="inspector__meta">También puedes arrastrar los extremos de la flecha hacia otra caja, igual que en Draw.io.</div>
+    </div>
+  );
 }
 
 function NodeInspector({ ir, selection, onSelect, mutate }: Props) {

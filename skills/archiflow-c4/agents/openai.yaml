@@ -1,0 +1,4 @@
+interface:
+  display_name: "ArchiFlow C4"
+  short_description: "Crea vistas C4 coherentes y animables"
+  default_prompt: "Usa $archiflow-c4 para crear la vista C4 adecuada con limites y relaciones verificables."

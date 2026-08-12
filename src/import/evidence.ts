@@ -47,6 +47,9 @@ export interface ImportedLink {
   label: string;
   source?: string;
   target?: string;
+  /** El XML no declaró ese extremo; se propuso por cercanía geométrica. */
+  sourceInferred?: boolean;
+  targetInferred?: boolean;
   /** Padre mxGraph, útil para diagnosticar enlaces anidados. */
   parent?: string;
   style: string;

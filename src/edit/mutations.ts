@@ -39,7 +39,8 @@ export type Mutation =
   | { op: 'step.add'; flowId: string; index?: number; step: Patch }
   | { op: 'step.remove'; flowId: string; index: number }
   | { op: 'step.update'; flowId: string; index: number; patch: Patch }
-  | { op: 'step.move'; flowId: string; from: number; to: number };
+  | { op: 'step.move'; flowId: string; from: number; to: number }
+  | { op: 'edge.update'; index: number; patch: Patch };
 
 class MutationError extends Error {}
 
@@ -276,6 +277,15 @@ function applyOne(doc: Document, mutation: Mutation): void {
       const [moved] = steps.items.splice(mutation.from, 1);
       const to = Math.min(Math.max(mutation.to, 0), steps.items.length);
       steps.items.splice(to, 0, moved);
+      break;
+    }
+
+    case 'edge.update': {
+      const edges = sequence(doc, 'edges', false);
+      if (!edges || mutation.index < 0 || mutation.index >= edges.items.length) {
+        throw new MutationError(`la arista ${mutation.index + 1} no existe`);
+      }
+      applyPatch(doc, mapAt(edges, mutation.index), mutation.patch);
       break;
     }
   }

@@ -149,6 +149,16 @@ describe('pasos', () => {
   });
 });
 
+describe('conexiones importadas', () => {
+  it('permite corregir un extremo y aceptar la propuesta', () => {
+    const withEdge = `${source}\nedges:\n  - from: app\n    to: bff\n    sourceInferred: true\n    note: propuesta\n`;
+    const output = apply(withEdge, { op: 'edge.update', index: 0, patch: { from: 'bff', sourceInferred: undefined, note: undefined } });
+    const edge = parseDiagram(output).diagram?.edges[0];
+    expect(edge).toMatchObject({ from: 'bff', to: 'bff', sourceInferred: false });
+    expect(edge?.note).toBeUndefined();
+  });
+});
+
 describe('atomicidad', () => {
   it('no aplica nada si una mutación del lote falla', () => {
     const result = applyMutations(source, [

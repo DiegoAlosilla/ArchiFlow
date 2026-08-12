@@ -1,0 +1,4 @@
+interface:
+  display_name: "ArchiFlow Sequence"
+  short_description: "Convierte escenarios en secuencias animadas"
+  default_prompt: "Usa $archiflow-sequence para separar escenarios y ordenar llamadas endpoint a endpoint."

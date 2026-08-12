@@ -16,6 +16,7 @@ export function ZoneNode({ data, id, selected }: NodeProps) {
   const { zone, editing, onResizeEnd } = data as ZoneNodeData;
   const cloudZone = /cloud|azure/i.test(`${zone.label} ${zone.platform ?? ''}`);
   const boundary = !zone.label;
+  const shapeClass = zone.appearance?.shape ? ` shape--${zone.appearance.shape}` : '';
   return (
     <>
       {editing && (
@@ -29,8 +30,18 @@ export function ZoneNode({ data, id, selected }: NodeProps) {
         />
       )}
       <div
-        className={`zone ${cloudZone ? 'zone--cloud' : boundary ? 'zone--boundary' : 'zone--domain'}`}
-        style={{ '--zone-accent': zone.color } as React.CSSProperties}
+        className={`zone${zone.appearance ? ' zone--faithful' : ''}${shapeClass} ${cloudZone ? 'zone--cloud' : boundary ? 'zone--boundary' : 'zone--domain'}`}
+        style={{
+          '--zone-accent': zone.color,
+          '--shape-fill': zone.appearance?.fill ?? '#ffffff',
+          '--shape-stroke': zone.appearance?.stroke ?? '#a0a0a0',
+          '--shape-text': zone.appearance?.text ?? '#1f2937',
+          '--shape-radius': `${zone.appearance?.radius ?? 0}px`,
+          '--shape-opacity': zone.appearance?.opacity ?? 1,
+          '--shape-stroke-width': `${zone.appearance?.strokeWidth ?? 1}px`,
+          '--frame-width': `${zone.appearance?.frameWidth ?? 192}px`,
+          '--frame-height': `${zone.appearance?.frameHeight ?? 18}px`,
+        } as React.CSSProperties}
       >
         <div className="zone__header">
           {zone.label && <span className="zone__label">{zone.label}</span>}
@@ -56,6 +67,9 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
   const endpoint = node.provides[0];
   const expanded = node.expanded && node.provides.length > 0;
   const vendorIcon = vendorIconPath(node.tags, node.label, node.tech, node.platform);
+  const appearance = node.appearance;
+  const shapeClass = appearance?.shape ? ` shape--${appearance.shape}` : '';
+  const vertical = appearance?.verticalAlign === 'top' ? 'flex-start' : appearance?.verticalAlign === 'bottom' ? 'flex-end' : 'center';
 
   return (
     <>
@@ -71,8 +85,24 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
       )}
 
       <div
-        className={`node node--${node.kind}${node.external ? ' node--external' : ''}${expanded ? ' node--expanded' : ''}${faithful ? ' node--faithful' : ''}${presentationClass}`}
-        style={{ '--accent': style.accent } as React.CSSProperties}
+        className={`node node--${node.kind}${node.external ? ' node--external' : ''}${expanded ? ' node--expanded' : ''}${faithful ? ' node--faithful' : ''}${presentationClass}${shapeClass}`}
+        style={{
+          '--accent': style.accent,
+          '--shape-fill': appearance?.fill ?? '#ffffff',
+          '--shape-stroke': appearance?.stroke ?? '#36393d',
+          '--shape-text': appearance?.text ?? '#1f2937',
+          '--shape-font-size': `${appearance?.fontSize ?? 12}px`,
+          '--shape-font-family': appearance?.fontFamily ?? 'Arial, sans-serif',
+          '--shape-font-weight': appearance?.bold ? 700 : 400,
+          '--shape-font-style': appearance?.italic ? 'italic' : 'normal',
+          '--shape-radius': `${appearance?.radius ?? 0}px`,
+          '--shape-opacity': appearance?.opacity ?? 1,
+          '--shape-align': appearance?.align ?? 'center',
+          '--shape-justify': vertical,
+          '--shape-stroke-width': `${appearance?.strokeWidth ?? 1}px`,
+          '--frame-width': `${appearance?.frameWidth ?? 192}px`,
+          '--frame-height': `${appearance?.frameHeight ?? 18}px`,
+        } as React.CSSProperties}
         data-node-id={id}
         title={node.description ?? undefined}
       >

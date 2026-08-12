@@ -1,23 +1,48 @@
 :root {
   /* Una superficie casi neutra deja que protocolos y tipos expliquen el
      diagrama. El acento solo marca interacción; no compite con el contenido. */
-  --bg: #101214;
-  --bg-panel: #151719;
-  --bg-raised: #1c1f23;
-  --border: #2a2e34;
-  --border-soft: #22262b;
-  --text: #eceef1;
-  --text-muted: #a5abb4;
-  --text-dim: #737b86;
-  --accent: #98a6ff;
-  --accent-soft: #526173;
-  --danger: #e06c6c;
-  --warning: #d9a441;
-  --ok: #4fa87a;
+  --bg: #f5f6f7;
+  --bg-panel: #ffffff;
+  --bg-raised: #f1f3f4;
+  --border: #c9ced6;
+  --border-soft: #e4e7eb;
+  --text: #202124;
+  --text-muted: #5f6368;
+  --text-dim: #7a818a;
+  --accent: #2f6fbd;
+  --accent-soft: #8aa9cd;
+  --danger: #b3261e;
+  --warning: #946200;
+  --ok: #2e7d32;
+  --grid-fine: #e7e9ec;
+  --grid-major: #d5d9df;
+  --minimap-mask: rgb(245 246 247 / 0.72);
+  --drawio-edge: #303030;
 
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
 
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --bg: #17191c;
+  --bg-panel: #202226;
+  --bg-raised: #292c31;
+  --border: #3a3e45;
+  --border-soft: #2d3035;
+  --text: #eceef1;
+  --text-muted: #b0b5bd;
+  --text-dim: #858c96;
+  --accent: #8ab4e8;
+  --accent-soft: #526173;
+  --danger: #f28b82;
+  --warning: #fdd663;
+  --ok: #81c995;
+  --grid-fine: #24272b;
+  --grid-major: #30343a;
+  --minimap-mask: rgb(23 25 28 / 0.76);
+  --drawio-edge: #303030;
   color-scheme: dark;
 }
 
@@ -38,6 +63,13 @@ body {
   font-family: var(--font);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Draw.io invierte su hoja completa en tema oscuro, no solo el chrome. Un
+   diagrama fiel debe hacer lo mismo para que fondos, texto y flechas con color
+   por defecto conserven el contraste relativo del original. */
+:root[data-theme='dark'] .canvas--faithful .react-flow__viewport {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 code {
@@ -430,6 +462,24 @@ button {
   color: #fcd34d;
   box-shadow: inset 2px 0 0 var(--warning);
 }
+.issue__button {
+  display: grid;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.issue__button:disabled { cursor: default; }
+.issue__action {
+  margin-top: 6px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+}
 
 .issue__line {
   flex-shrink: 0;
@@ -809,6 +859,10 @@ button {
   stroke-width: 3;
   filter: drop-shadow(0 0 5px currentColor);
 }
+.react-flow__edge.is-selected .react-flow__edge-path {
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 2px rgb(47 111 189 / 0.45));
+}
 
 .edge-label {
   position: absolute;
@@ -836,6 +890,53 @@ button {
 .edge-label__more {
   margin-left: 5px;
   opacity: 0.6;
+}
+
+/* Edición de conectores al estilo Draw.io: cuadrados azules para los codos y
+   rombos blancos en el centro de cada tramo para insertar uno nuevo. */
+.edge-route-editor {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+.edge-route-handle,
+.edge-route-add {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  padding: 0;
+  border: 1px solid #1d4ed8;
+  pointer-events: all;
+  cursor: move;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.9);
+}
+.edge-route-handle {
+  width: 9px;
+  height: 9px;
+  background: #2f6fbd;
+  border-radius: 1px;
+}
+.edge-route-add {
+  width: 7px;
+  height: 7px;
+  background: #fff;
+  border-color: #64748b;
+  rotate: 45deg;
+  cursor: copy;
+  opacity: 0.92;
+}
+.react-flow__edgeupdater {
+  fill: #fff;
+  stroke: #2f6fbd;
+  stroke-width: 1.5;
+  opacity: 0;
+  pointer-events: none;
+}
+.react-flow__edge.is-selected .react-flow__edgeupdater {
+  opacity: 1;
+  pointer-events: all;
 }
 
 /* ── Paquetes animados ──────────────────────────────────────── */
@@ -1212,6 +1313,44 @@ button {
   color: var(--text-dim);
   border-top: 1px solid var(--border-soft);
 }
+.inspector__proposal {
+  margin: 8px 0 14px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 48%, var(--border));
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--warning) 10%, var(--bg-panel));
+  font-size: 11px;
+  line-height: 1.45;
+}
+.inspector__proposal p { margin: 5px 0 9px; color: var(--text-muted); }
+.inspector__section-title {
+  margin-top: 4px;
+  padding-top: 12px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border-soft);
+}
+.inspector__route {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  background: var(--bg-raised);
+  font-size: 11px;
+}
+.inspector__route p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.inspector__reset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 
 /* ── Campos ─────────────────────────────────────────────────── */
 
@@ -1310,14 +1449,21 @@ button {
   cursor: grabbing;
 }
 
-/* En edición los conectores tienen que verse: son la forma de añadir pasos. */
+/* Los conectores permanecen alcanzables, pero sus asas sólo aparecen en la
+   caja activa o bajo el puntero. Mantenerlas visibles en 167 elementos tapaba
+   textos y hacía parecer que el import había añadido puntos inexistentes. */
 .canvas--editing .node__handle {
-  opacity: 1;
+  opacity: 0;
   pointer-events: all;
   width: 9px;
   height: 9px;
   background: var(--bg-panel);
   border: 1.5px solid var(--accent);
+}
+
+.canvas--editing .react-flow__node:hover .node__handle,
+.canvas--editing .react-flow__node.is-selected .node__handle {
+  opacity: 1;
 }
 
 .canvas--editing .node__handle:hover {
@@ -1587,4 +1733,347 @@ button {
 .empty__hint {
   font-size: 12.5px;
   color: var(--text-dim) !important;
+}
+
+/* ── Editor de escritorio tipo diagrams.net ───────────────── */
+
+.app-chrome {
+  flex: none;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgb(31 41 55 / 0.08);
+  z-index: 20;
+}
+
+.menubar {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 3px 10px;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.menubar .topbar__brand { gap: 7px; }
+
+.menubar .topbar__logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: #2f6fbd;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+}
+
+.app-menus { display: flex; align-items: center; gap: 1px; }
+
+.menu-button,
+.theme-toggle {
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.menu-button:hover,
+.theme-toggle:hover { background: var(--bg-raised); }
+
+.menubar .topbar__diagram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-inline: auto;
+  flex: 1;
+  min-width: 0;
+}
+
+.menubar .topbar__diagram h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 550;
+}
+
+.theme-toggle { flex: none; color: var(--text-muted); }
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  gap: 4px;
+  padding: 5px 10px;
+}
+
+.toolbar .tool,
+.toolbar .export > button {
+  min-height: 29px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.toolbar .tool:hover:not(:disabled),
+.toolbar .export > button:hover { background: var(--bg-raised); border-color: var(--border-soft); }
+.toolbar .tool:active:not(:disabled) { transform: translateY(1px); }
+.toolbar .tool:disabled { opacity: 0.38; cursor: default; }
+.toolbar .tool--icon { width: 30px; padding-inline: 0; font-size: 17px; }
+.toolbar .tool--active,
+.toolbar .tool--primary { color: #ffffff; background: #2f6fbd; border-color: #275e9f; }
+.toolbar__divider { width: 1px; height: 24px; margin: 0 4px; background: var(--border-soft); }
+.toolbar__file { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+}
+
+.banner--success {
+  color: #185c2d;
+  background: #e6f4ea;
+  border-bottom: 1px solid #b7dfc2;
+}
+
+:root[data-theme='dark'] .banner--success { color: #b7dfc2; background: #203a28; border-color: #31563c; }
+
+.path-hint {
+  position: fixed;
+  top: 91px;
+  left: 50%;
+  z-index: 40;
+  transform: translateX(-50%);
+  padding: 7px 12px;
+  border: 1px solid #245b99;
+  border-radius: 4px;
+  background: #2f6fbd;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgb(31 41 55 / 0.22);
+  font-size: 12px;
+}
+
+.sidebar { width: 244px; background: var(--bg-panel); }
+.inspector-panel { width: 286px; background: var(--bg-panel); }
+.panel { padding: 11px 10px 12px; }
+
+.shape-library { flex: none; }
+.shape-library__search {
+  margin-bottom: 11px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+  background: var(--bg);
+  font-size: 11.5px;
+}
+.shape-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.shape-item {
+  display: grid;
+  grid-template-rows: 35px auto;
+  place-items: center;
+  min-width: 0;
+  padding: 5px 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.shape-item:hover { border-color: #8eb3dc; background: #eef5fc; color: var(--text); }
+:root[data-theme='dark'] .shape-item:hover { background: #263444; }
+.shape-item__glyph { color: var(--text); font-family: Arial, sans-serif; font-size: 29px; line-height: 1; }
+
+.inspector-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-bottom: 1px solid var(--border);
+}
+.inspector-tabs button {
+  padding: 10px 4px 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.inspector-tabs button:hover { background: var(--bg-raised); }
+.inspector-tabs button.is-active { border-bottom-color: #2f6fbd; color: var(--text); font-weight: 600; }
+.style-panel { gap: 8px; }
+.style-row { display: flex; align-items: center; justify-content: space-between; min-height: 31px; color: var(--text-muted); font-size: 12px; }
+.style-row input[type='color'] { width: 38px; height: 25px; padding: 1px; border: 1px solid var(--border); border-radius: 3px; background: var(--bg-panel); }
+.style-row input[type='range'] { width: 130px; accent-color: #2f6fbd; }
+
+.pagebar {
+  display: flex;
+  align-items: center;
+  height: 31px;
+  flex: none;
+  padding: 0 8px;
+  gap: 3px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.pagebar button { height: 24px; border: 1px solid transparent; background: transparent; color: var(--text-muted); font-size: 11px; }
+.pagebar__tab.is-active { border-color: var(--border); border-radius: 3px; background: var(--bg-raised); color: var(--text); }
+.pagebar__add { width: 25px; font-size: 16px !important; }
+.pagebar__meta { margin-left: auto; color: var(--text-dim); font-size: 10.5px; }
+
+.react-flow__renderer { background: var(--bg-panel); }
+.react-flow__controls button,
+.react-flow__minimap { background: var(--bg-panel); color: var(--text); }
+
+/* La apariencia Draw.io manda únicamente en elementos importados. */
+.zone--faithful {
+  border: var(--shape-stroke-width) solid var(--shape-stroke) !important;
+  border-radius: var(--shape-radius) !important;
+  background: var(--shape-fill) !important;
+  color: var(--shape-text) !important;
+  opacity: var(--shape-opacity);
+  box-shadow: none !important;
+}
+.zone--faithful .zone__label { color: var(--shape-text); text-transform: none; letter-spacing: 0; }
+
+.node--faithful:not(.node--image):not(.node--annotation):not(.node--label) {
+  align-items: var(--shape-justify);
+  justify-content: var(--shape-justify);
+  gap: 0;
+  padding: 8px;
+  border: var(--shape-stroke-width) solid var(--shape-stroke);
+  border-radius: var(--shape-radius);
+  background: var(--shape-fill);
+  color: var(--shape-text);
+  opacity: var(--shape-opacity);
+  box-shadow: none;
+  font-family: var(--shape-font-family);
+}
+.node--faithful:not(.node--image):not(.node--annotation):not(.node--label) > .node__icon:not(.node__icon--vendor) { display: none; }
+.node--faithful .node__text { width: 100%; text-align: var(--shape-align); }
+.node--faithful .node__label {
+  color: var(--shape-text);
+  font-family: var(--shape-font-family);
+  font-size: var(--shape-font-size);
+  font-style: var(--shape-font-style);
+  font-weight: var(--shape-font-weight);
+  line-height: 1.18;
+}
+.node--faithful.node--external { border-style: dashed; }
+
+/* Siluetas portables de Draw.io. `module` reproduce las dos pestañas UML que
+   antes desaparecían y hacían que todos los servicios parecieran rectángulos. */
+.node--faithful.shape--module,
+.zone--faithful.shape--module { overflow: visible; }
+.node--faithful.shape--module::before,
+.zone--faithful.shape--module::before {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  left: -5px;
+  top: 28%;
+  width: 8px;
+  height: 5px;
+  border: var(--shape-stroke-width) solid var(--shape-stroke);
+  background: var(--shape-fill);
+  box-shadow: 0 12px 0 -1px var(--shape-fill), 0 12px 0 0 var(--shape-stroke);
+  pointer-events: none;
+}
+.node--faithful.shape--note::after,
+.zone--faithful.shape--note::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -1px;
+  width: 14px;
+  height: 14px;
+  background: linear-gradient(225deg, var(--bg-panel) 48%, var(--shape-stroke) 50%, var(--shape-fill) 54%);
+  pointer-events: none;
+}
+.node--faithful.shape--uml-frame::after,
+.zone--faithful.shape--uml-frame::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: var(--frame-height);
+  width: min(var(--frame-width), 100%);
+  border-top: var(--shape-stroke-width) solid var(--shape-stroke);
+  pointer-events: none;
+}
+.zone--faithful.shape--uml-frame .zone__header {
+  box-sizing: border-box;
+  width: min(var(--frame-width), 100%);
+  height: var(--frame-height);
+  padding: 1px 7px;
+  overflow: hidden;
+  align-items: center;
+  white-space: nowrap;
+}
+.zone--faithful.shape--uml-frame .zone__label {
+  display: block;
+  overflow: hidden;
+  line-height: calc(var(--frame-height) - 2px);
+  text-overflow: clip;
+  white-space: nowrap;
+}
+.node--faithful.shape--uml-frame:not(.node--image):not(.node--annotation):not(.node--label) {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 1px 7px;
+  overflow: hidden;
+}
+.node--faithful.shape--uml-frame .node__text {
+  box-sizing: border-box;
+  flex: 0 0 min(var(--frame-width), 100%);
+  width: min(var(--frame-width), 100%);
+  height: calc(var(--frame-height) - 2px);
+  overflow: hidden;
+  justify-content: center;
+  text-align: left;
+  white-space: nowrap;
+}
+.node--faithful.shape--uml-frame .node__label {
+  display: block;
+  overflow: hidden;
+  line-height: calc(var(--frame-height) - 2px);
+  overflow-wrap: normal;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.react-flow__node.is-path-start .node {
+  outline: 3px solid rgb(47 111 189 / 0.28);
+  border-color: #2f6fbd;
+}
+
+.edge-label {
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  box-shadow: 0 1px 2px rgb(31 41 55 / 0.12);
+}
+
+@media (max-width: 980px) {
+  .app-menus .menu-button:nth-last-child(-n + 3),
+  .toolbar__file { display: none; }
+  .sidebar { width: 210px; }
+  .inspector-panel { width: 250px; }
+}
+
+:root:not([data-theme='dark']) .issue--warning {
+  color: #6d4c00;
+  background: #fff8e1;
+  border-color: #a66a00;
+}
+
+:root:not([data-theme='dark']) .badge--warning {
+  color: #5f4200;
+  background: #f5d77a;
 }

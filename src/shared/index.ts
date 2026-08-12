@@ -56,4 +56,22 @@ export interface MutateResponse {
   issues?: Issue[];
 }
 
+export interface ImportRequest {
+  name: string;
+  source: string;
+}
+
+export interface ImportResponse {
+  ok: boolean;
+  file?: string;
+  error?: string;
+  warnings?: string[];
+  summary?: {
+    pages: number;
+    shapes: number;
+    containers: number;
+    links: number;
+  };
+}
+
 export type { Mutation };

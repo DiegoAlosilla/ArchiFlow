@@ -150,8 +150,19 @@ function validateSemantics(diagram: Diagram): Issue[] {
     checkRef(edge.to, ['edges', i, 'to'], `la arista ${i + 1}`);
   });
 
+  diagram.edges.forEach((edge, i) => {
+    if (edge.sourceInferred || edge.targetInferred) {
+      const extremes = [edge.sourceInferred ? 'origen' : '', edge.targetInferred ? 'destino' : ''].filter(Boolean).join(' y ');
+      issues.push({
+        level: 'warning',
+        message: `la arista ${i + 1} tenía el ${extremes} suelto en Draw.io; se propone '${edge.from}' → '${edge.to}'`,
+        path: ['edges', i],
+      });
+    }
+  });
+
   diagram.nodes.forEach((node, i) => {
-    if (!referenced.has(node.id)) {
+    if (diagram.layoutMode !== 'faithful' && !referenced.has(node.id)) {
       issues.push({
         level: 'warning',
         message: `el nodo '${node.id}' no participa en ningún flujo ni arista; aparecerá suelto en el diagrama`,
@@ -160,7 +171,7 @@ function validateSemantics(diagram: Diagram): Issue[] {
     }
   });
 
-  if (diagram.flows.length === 0) {
+  if (diagram.layoutMode !== 'faithful' && diagram.flows.length === 0) {
     issues.push({
       level: 'warning',
       message: 'el diagrama no tiene flujos: se verá la topología pero no habrá nada que animar',

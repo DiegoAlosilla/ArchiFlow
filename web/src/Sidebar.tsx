@@ -1,4 +1,4 @@
-import type { Ir, IrFlow } from '@archiflow/schema';
+import type { Ir, IrFlow, NodeKind } from '@archiflow/schema';
 import type { DiagramEntry, Mutation } from '@archiflow/shared';
 import { clock } from './playback';
 import { protocolColor } from './kinds';
@@ -17,6 +17,8 @@ interface Props {
   selection: Selection;
   onSelect: (selection: Selection) => void;
   mutate: (...mutations: Mutation[]) => Promise<boolean>;
+  onAddNode: (kind?: NodeKind) => void;
+  onIssueClick: (issue: DiagramEntry['issues'][number]) => void;
 }
 
 /** Sufija un id numérico hasta que no colisione. */
@@ -40,6 +42,8 @@ export function Sidebar({
   selection,
   onSelect,
   mutate,
+  onAddNode,
+  onIssueClick,
 }: Props) {
   const issues = selectedDiagram?.issues ?? [];
   const errors = issues.filter((issue) => issue.level === 'error');
@@ -67,6 +71,28 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
+      <section className="panel shape-library">
+        <div className="shape-library__search" aria-label="Buscar figuras">Buscar figuras</div>
+        <h2 className="panel__title">General</h2>
+        <div className="shape-grid">
+          {([
+            ['service', 'Servicio', '▭'],
+            ['frontend', 'Web', '▤'],
+            ['client', 'Canal', '▯'],
+            ['gateway', 'Gateway', '◇'],
+            ['database', 'Base de datos', '◉'],
+            ['cache', 'Caché', '▰'],
+            ['broker', 'Evento', '⇄'],
+            ['external', 'Externo', '⬡'],
+          ] as [NodeKind, string, string][]).map(([kind, label, glyph]) => (
+            <button key={kind} type="button" className="shape-item" onClick={() => onAddNode(kind)} title={`Añadir ${label}`}>
+              <span className="shape-item__glyph" aria-hidden="true">{glyph}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
       {diagrams.length > 1 && (
         <section className="panel">
           <h2 className="panel__title">Diagramas</h2>
@@ -116,7 +142,7 @@ export function Sidebar({
                 >
                   <span className="list__label">{flow.label}</span>
                   <span className="list__meta">
-                    {flow.steps.length} pasos
+                    {flow.steps.length} {flow.steps.length === 1 ? 'paso' : 'pasos'}
                     {flow.level === 'method' && ' · nivel método'}
                   </span>
                   {flow.trigger && <span className="list__note">{flow.trigger}</span>}
@@ -196,8 +222,11 @@ export function Sidebar({
           <ul className="issues">
             {issues.map((issue, i) => (
               <li key={i} className={`issue issue--${issue.level}`}>
-                {issue.line !== undefined && <span className="issue__line">L{issue.line}</span>}
-                <span>{issue.message}</span>
+                <button type="button" className="issue__button" onClick={() => onIssueClick(issue)} disabled={!issue.path?.length}>
+                  {issue.line !== undefined && <span className="issue__line">L{issue.line}</span>}
+                  <span>{issue.message}</span>
+                  {issue.path?.length ? <span className="issue__action">Revisar</span> : null}
+                </button>
               </li>
             ))}
           </ul>

@@ -34,6 +34,8 @@ export interface EdgeData extends Record<string, unknown> {
   edge: IrEdge;
   /** Lado y hueco asignados a cada extremo, para que las aristas no se pisen. */
   slot: EdgeSlot;
+  editing?: boolean;
+  onRouteChange?: (index: number, points: Array<{ x: number; y: number }>) => void;
 }
 
 /**
@@ -96,7 +98,7 @@ export function toReactFlow(laid: LaidOutGraph, ir: Ir): LayoutResult {
         width: box.width,
         height: box.height,
         style: { width: box.width, height: box.height },
-        zIndex: 1,
+        zIndex: 3,
       });
     }
   }
@@ -112,7 +114,7 @@ export function toReactFlow(laid: LaidOutGraph, ir: Ir): LayoutResult {
       width: box.width,
       height: box.height,
       style: { width: box.width, height: box.height },
-      zIndex: 1,
+      zIndex: 3,
     });
   }
 
