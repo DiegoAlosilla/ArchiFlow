@@ -405,6 +405,7 @@ export default function App() {
                 onSelect={(next) => {
                   setSelection(next);
                   if (next?.kind === 'edge') setInspectorTab('arrange');
+                  if (next?.kind === 'operation') setInspectorTab('text');
                 }}
                 onStepChange={handleStepChange}
                 currentStep={currentStep}

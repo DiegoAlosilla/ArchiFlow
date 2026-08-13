@@ -128,7 +128,9 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, cur
           data: {
             ...node.data,
             editing,
+            selectedOperation: selection?.kind === 'operation' && selection.nodeId === node.id ? selection.index : undefined,
             onResizeEnd,
+            onOperationSelect: (nodeId: string, index: number) => onSelect({ kind: 'operation', nodeId, index }),
             onLabelChange: (id: string, label: string) => {
               void mutate(
                 node.type === 'zone'
@@ -146,7 +148,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, cur
         };
       });
     },
-    [flow, editing, selection, onResizeEnd, pathMode, pathStart, mutate],
+    [flow, editing, selection, onResizeEnd, pathMode, pathStart, mutate, onSelect],
   );
 
   useEffect(() => {
@@ -186,6 +188,8 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, cur
     if (!target || !computed) return;
     const ids = target.kind === 'node'
       ? [target.id]
+      : target.kind === 'operation'
+        ? [target.nodeId]
       : target.kind === 'zone'
         ? [`zone:${target.id}`]
         : target.kind === 'edge'

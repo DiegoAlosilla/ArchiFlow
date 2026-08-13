@@ -119,6 +119,15 @@ function wrapLabel(text: string, maxWidth: number, charWidth: number): string[] 
   return lines.length > 0 ? lines : [text];
 }
 
+/** Parte una ruta en dos renglones sin perder caracteres. */
+function endpointTargetLines(method: string, target: string, rowWidth: number): string[] {
+  const firstLimit = Math.max(1, Math.floor((rowWidth - 20 - method.length * 6.4 - 6) / 5.6));
+  if (target.length <= firstLimit) return [target];
+  const secondLimit = Math.max(1, Math.floor((rowWidth - 14) / 5.6));
+  const firstLength = Math.max(1, target.length - secondLimit);
+  return [target.slice(0, firstLength), target.slice(firstLength)];
+}
+
 function absoluteBoxes(laid: LaidOutGraph): Map<string, Box> {
   const boxes = new Map<string, Box>();
   for (const zone of laid.zones) {
@@ -230,14 +239,19 @@ function renderNode(node: IrNode, box: Box, palette: Palette, dimmed: boolean, a
       const y = box.y + header;
       const method = operation.method ?? 'OP';
       const target = operation.path ?? operation.label ?? operation.id ?? 'operación';
+      const targetLines = endpointTargetLines(method, target, rowWidth);
       parts.push(
-        `<rect x="${rowX}" y="${y}" width="${rowWidth}" height="${ENDPOINT_ROW - 4}" rx="4" ` +
+        `<rect x="${rowX}" y="${y}" width="${rowWidth}" height="${ENDPOINT_ROW}" rx="4" ` +
           `fill="${accent}" fill-opacity="0.08" stroke="${accent}" stroke-opacity="0.4" />`,
         `<text x="${rowX + 7}" y="${y + 14.5}" font-family="${MONO}" font-size="9.5" ` +
           `font-weight="700" fill="${accent}">${escapeXml(method)}</text>`,
         `<text x="${rowX + 7 + method.length * 6.4 + 6}" y="${y + 14.5}" font-family="${MONO}" ` +
           `font-size="9.5" fill="${mutedColor}">` +
-          `${escapeXml(truncate(target, rowWidth - 20 - method.length * 6.4, 5.6))}</text>`,
+          `${escapeXml(targetLines[0]!)}</text>`,
+        ...(targetLines[1]
+          ? [`<text x="${rowX + 7}" y="${y + 28.5}" font-family="${MONO}" font-size="9.5" ` +
+            `fill="${mutedColor}">${escapeXml(targetLines[1])}</text>`]
+          : []),
       );
     });
   }

@@ -25,6 +25,18 @@ export function ArrangePanel({ ir, selection, mutate }: Props) {
     </div>;
   }
 
+  if (selection.kind === 'operation') {
+    const node = ir.nodes.find((candidate) => candidate.id === selection.nodeId);
+    const operation = node?.provides[selection.index];
+    if (!node || !operation) return null;
+    return <div className="inspector arrange-panel">
+      <header className="inspector__header"><span className="inspector__kind">Endpoint dentro de {node.label}</span></header>
+      <div className="arrange-panel__status"><b>Orden horizontal</b><span>{selection.index + 1} de {node.provides.length}</span></div>
+      <div className="arrange-panel__status"><b>Altura</b><span>Uniforme · 2 líneas</span></div>
+      <p>El endpoint permanece unido al microservicio y no se mueve de forma independiente. Mueve o redimensiona el cuadro principal para organizar el conjunto.</p>
+    </div>;
+  }
+
   if (selection.kind === 'zone') {
     const zone = ir.zones.find((candidate) => candidate.id === selection.id);
     if (!zone) return null;

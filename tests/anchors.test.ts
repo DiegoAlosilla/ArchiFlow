@@ -132,7 +132,7 @@ describe('endpointAnchorPoint', () => {
     const refresh = endpointAnchorPoint(serviceBox, service, 'refresh', 'right', 0, 1)!;
 
     expect(login.x).toBe(206);
-    expect(login.y).toBe(269);
+    expect(login.y).toBe(279);
     expect(refresh.x).toBe(306);
     expect(refresh.y).toBe(login.y);
     expect(login.x).toBeLessThan(serviceBox.x + serviceBox.width);

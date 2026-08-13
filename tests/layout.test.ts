@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compile } from '../src/schema/compile.js';
 import { parseDiagram } from '../src/schema/parse.js';
-import { computeBaseLayout, layoutEdgeRefs, placeEdgeLabel, routeAroundObstacles, routeEdge } from '../src/layout/index.js';
+import { computeBaseLayout, endpointBox, layoutEdgeRefs, nodeHeight, nodeWidth, placeEdgeLabel, routeAroundObstacles, routeEdge } from '../src/layout/index.js';
 
 const roundTrip = `
 archiflow: 1
@@ -78,5 +78,25 @@ describe('orden del flujo', () => {
     const label = placeEdgeLabel(points, [external], 150, 22);
     expect(label.x + 75).toBeLessThanOrEqual(external.x);
     expect(label.y).toBeLessThan(190);
+  });
+});
+
+describe('tarjetas de endpoints', () => {
+  const operation = { id: 'larga', method: 'POST' as const, path: '/v1/usuarios/{usuarioId}/credenciales/restablecimiento-password' };
+  const node = {
+    id: 'auth', label: 'Auth', kind: 'service' as const, tags: [], provides: [operation], expanded: true,
+    topics: [], external: false, degree: 0,
+  };
+
+  it('reserva dos líneas uniformes y ancho suficiente para la ruta completa', () => {
+    expect(nodeHeight(node)).toBe(110);
+    expect(nodeWidth(node)).toBeGreaterThan(180);
+    expect(endpointBox({ x: 0, y: 0, width: nodeWidth(node), height: nodeHeight(node) }, node, 'larga')?.height).toBe(42);
+  });
+
+  it('no permite que un ancho manual corte el contrato del endpoint', () => {
+    const reduced = { ...node, layout: { x: 0, y: 0, width: 140, height: 60 } };
+    expect(nodeWidth(reduced)).toBe(nodeWidth(node));
+    expect(nodeHeight(reduced)).toBe(nodeHeight(node));
   });
 });

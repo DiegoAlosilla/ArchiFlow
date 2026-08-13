@@ -1,5 +1,5 @@
 import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js';
-import type { Ir, IrNode } from '../schema/compile.js';
+import { endpointSignature, type Ir, type IrNode } from '../schema/compile.js';
 import { anchorPoint, type Side } from './anchors.js';
 
 /**
@@ -28,7 +28,7 @@ export const NODE_HEIGHT = 76;
  * `web/src/styles.css`: si se cambian aquí, hay que cambiarlos allí.
  */
 export const NODE_HEADER = 58;
-export const ENDPOINT_ROW = 26;
+export const ENDPOINT_ROW = 42;
 export const ENDPOINT_GAP = 8;
 export const ENDPOINT_MIN_WIDTH = 164;
 /** Aire alrededor de las operaciones. */
@@ -45,25 +45,33 @@ const MIN_ZONE_HEIGHT = 140;
 
 /** Un tamaño fijado a mano manda; si no, se estima a partir del texto. */
 export function nodeWidth(node: IrNode): number {
-  if (node.layout?.width) return node.layout.width;
   const longest = Math.max(node.label.length, (node.tech ?? '').length + 2);
   const headerWidth = Math.min(MAX_NODE_WIDTH, Math.max(MIN_NODE_WIDTH, Math.round(longest * 8.5 + 52)));
   if (node.expanded && node.provides.length > 0) {
-    return Math.max(
+    // Cada firma debe caber completa en dos líneas monospace. El endpoint más
+    // largo define el ancho común para mantener una banda uniforme.
+    const longestEndpoint = Math.max(...node.provides.map((operation) => endpointSignature(operation).length));
+    const endpointWidth = Math.max(ENDPOINT_MIN_WIDTH, Math.ceil(longestEndpoint * 3.1 + 18));
+    const minimum = Math.max(
       headerWidth,
-      28 + node.provides.length * ENDPOINT_MIN_WIDTH + Math.max(0, node.provides.length - 1) * ENDPOINT_GAP,
+      28 + node.provides.length * endpointWidth + Math.max(0, node.provides.length - 1) * ENDPOINT_GAP,
+    );
+    return Math.max(
+      node.layout?.width ?? 0,
+      minimum,
     );
   }
+  if (node.layout?.width) return node.layout.width;
   return headerWidth;
 }
 
 export function nodeHeight(node: IrNode): number {
-  if (node.layout?.height) return node.layout.height;
   // Los endpoints se disponen horizontalmente en una única banda. Así una
   // conexión vertical entra o sale de su tarjeta sin atravesar las demás.
   if (node.expanded && node.provides.length > 0) {
-    return NODE_HEADER + ENDPOINT_ROW + ENDPOINT_PADDING;
+    return Math.max(node.layout?.height ?? 0, NODE_HEADER + ENDPOINT_ROW + ENDPOINT_PADDING);
   }
+  if (node.layout?.height) return node.layout.height;
   return NODE_HEIGHT;
 }
 
@@ -111,7 +119,7 @@ export function endpointBox(
     x: box.x + 14 + operationIndex * (operationWidth + ENDPOINT_GAP),
     y: box.y + NODE_HEADER,
     width: operationWidth,
-    height: 22,
+    height: ENDPOINT_ROW,
   };
 }
 
