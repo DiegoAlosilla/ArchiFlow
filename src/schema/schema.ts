@@ -126,6 +126,13 @@ export type Appearance = z.infer<typeof AppearanceSchema>;
 
 /** Geometría de una conexión importada. Las coordenadas son de lienzo absoluto. */
 export const PointSchema = z.object({ x: z.number(), y: z.number() }).strict();
+export const HeaderSchema = z.object({
+  name: z.string().min(1),
+  value: z.string().optional(),
+  required: z.boolean().default(true),
+  description: z.string().optional(),
+}).strict();
+export type Header = z.infer<typeof HeaderSchema>;
 export const EdgeLayoutSchema = z
   .object({
     sourcePoint: PointSchema.optional(),
@@ -216,6 +223,12 @@ export const StepSchema = z
     /** Ejemplos libres: pueden ser JSON incompleto durante el diseño. */
     request: z.string().optional(),
     response: z.string().optional(),
+    /** Headers que viajan en este paso; se muestran como contrato estructurado. */
+    headers: z.array(HeaderSchema).default([]),
+    /** Posición libre de la etiqueta del paso en coordenadas del canvas. */
+    labelPosition: PointSchema.optional(),
+    /** Recorrido editable de este paso, incluso cuando la arista se infiere del flujo. */
+    layout: EdgeLayoutSchema.optional(),
     note: z.string().optional(),
   })
   .strict();

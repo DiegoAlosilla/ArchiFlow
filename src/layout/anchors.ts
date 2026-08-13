@@ -35,6 +35,8 @@ interface EdgeRef {
   id: string;
   source: string;
   target: string;
+  /** Carril semántico: la solicitud queda antes que su respuesta. */
+  lane?: 'request' | 'response' | 'neutral';
 }
 
 const center = (box: Box) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
@@ -58,7 +60,7 @@ function crossAxis(side: Side, point: { x: number; y: number }): number {
 }
 
 export function computeSlots(boxes: Map<string, Box>, edges: EdgeRef[]): Map<string, EdgeSlot> {
-  type Endpoint = { edgeId: string; end: 'source' | 'target'; side: Side; order: number };
+  type Endpoint = { edgeId: string; end: 'source' | 'target'; side: Side; order: number; lane: EdgeRef['lane'] };
   const perSide = new Map<string, Endpoint[]>();
   const sides = new Map<string, { source: Side; target: Side }>();
 
@@ -73,7 +75,7 @@ export function computeSlots(boxes: Map<string, Box>, edges: EdgeRef[]): Map<str
     const push = (nodeId: string, end: 'source' | 'target', side: Side, other: Box) => {
       const key = `${nodeId}:${side}`;
       const list = perSide.get(key) ?? [];
-      list.push({ edgeId: edge.id, end, side, order: crossAxis(side, center(other)) });
+      list.push({ edgeId: edge.id, end, side, order: crossAxis(side, center(other)), lane: edge.lane });
       perSide.set(key, list);
     };
 
@@ -99,7 +101,8 @@ export function computeSlots(boxes: Map<string, Box>, edges: EdgeRef[]): Map<str
   };
 
   for (const endpoints of perSide.values()) {
-    endpoints.sort((a, b) => a.order - b.order);
+    const laneOrder = (lane: EdgeRef['lane']) => lane === 'request' ? 0 : lane === 'response' ? 2 : 1;
+    endpoints.sort((a, b) => a.order - b.order || laneOrder(a.lane) - laneOrder(b.lane) || a.edgeId.localeCompare(b.edgeId));
     endpoints.forEach((endpoint, index) => {
       const slot = ensure(endpoint.edgeId);
       if (endpoint.end === 'source') {
@@ -122,7 +125,10 @@ export function anchorPoint(
   index: number,
   count: number,
 ): { x: number; y: number } {
-  const fraction = (index + 1) / (count + 1);
+  // Un par request/response necesita más aire que dos conexiones del mismo
+  // sentido. Con tercios quedaban visualmente pegadas al reducir el zoom; los
+  // cuartos producen dos corredores inequívocos sin acercarse a las esquinas.
+  const fraction = count === 2 ? (index === 0 ? 0.25 : 0.75) : (index + 1) / (count + 1);
   switch (side) {
     case 'top':
       return { x: box.x + box.width * fraction, y: box.y };

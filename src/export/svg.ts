@@ -4,9 +4,12 @@ import {
   computeLayout,
   computeSlots,
   pointAlong,
+  placeEdgeLabel,
   pointBelongsToBox,
   routeEdge,
+  slotEdgeRefs,
   ENDPOINT_ROW,
+  ENDPOINT_GAP,
   NODE_HEADER,
   type Box,
   type LaidOutGraph,
@@ -217,10 +220,10 @@ function renderNode(node: IrNode, box: Box, palette: Palette, dimmed: boolean, a
   }
 
   if (expanded) {
-    const rowX = box.x + 14;
-    const rowWidth = box.width - 28;
+    const rowWidth = (box.width - 28 - Math.max(0, node.provides.length - 1) * ENDPOINT_GAP) / node.provides.length;
     node.provides.forEach((operation, index) => {
-      const y = box.y + header + index * ENDPOINT_ROW;
+      const rowX = box.x + 14 + index * (rowWidth + ENDPOINT_GAP);
+      const y = box.y + header;
       const method = operation.method ?? 'OP';
       const target = operation.path ?? operation.label ?? operation.id ?? 'operación';
       parts.push(
@@ -244,7 +247,7 @@ export async function toSvg(ir: Ir, options: SvgOptions = {}): Promise<string> {
   const palette = light ? LIGHT : DARK;
   const laid = await computeLayout(ir);
   const boxes = absoluteBoxes(laid);
-  const slots = computeSlots(boxes, ir.edges);
+  const slots = computeSlots(boxes, slotEdgeRefs(ir));
 
   const flow: IrFlow | undefined = flowId
     ? ir.flows.find((candidate) => candidate.id === flowId)
@@ -363,9 +366,8 @@ export async function toSvg(ir: Ir, options: SvgOptions = {}): Promise<string> {
 
     const clipped = truncate(text, 230, 5.6);
     const labelWidth = clipped.length * 5.6 + 12;
-    // Apartada del trazo: encima de la línea la flecha la parte en dos y deja
-    // de leerse, por muy opaco que sea el fondo.
-    const at = route.labelOffset;
+    const zoneHeaders = laid.zones.map((zone) => ({ x: zone.x, y: zone.y, width: zone.width, height: 44 }));
+    const at = placeEdgeLabel(route.points, [...boxes.values(), ...zoneHeaders], labelWidth, 18);
     labels.push(
       `<g>` +
         `<rect x="${(at.x - labelWidth / 2).toFixed(1)}" y="${(at.y - 9).toFixed(1)}" ` +

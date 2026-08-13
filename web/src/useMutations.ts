@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DiagramEntry, MutateRequest, MutateResponse, Mutation } from '@archiflow/shared';
+import { clock } from './playback';
 
 /**
  * Cliente de edición contra `POST /api/mutate`.
@@ -65,6 +66,9 @@ export function useMutations(entry: DiagramEntry | null): MutationClient {
   const mutate = useCallback(
     (...mutations: Mutation[]): Promise<boolean> => {
       if (!entry || mutations.length === 0) return Promise.resolve(false);
+      // Toda edición, sin importar si nació en el canvas o en un inspector,
+      // congela la narración. El guardado posterior conserva esta pausa.
+      clock.pause();
 
       const run = async (): Promise<boolean> => {
         inFlight.current += 1;
@@ -110,6 +114,7 @@ export function useMutations(entry: DiagramEntry | null): MutationClient {
 
   const history = useCallback((action: 'undo' | 'redo'): Promise<boolean> => {
     if (!entry) return Promise.resolve(false);
+    clock.pause();
     const run = async (): Promise<boolean> => {
       inFlight.current += 1;
       setSaving(true);

@@ -196,6 +196,8 @@ export function Sidebar({
                             {step.protocol}
                           </span>
                           {step.async && <span className="tag tag--async">async</span>}
+                          {step.request && <span className="tag tag--request">request</span>}
+                          {(step.response || step.returns) && <span className="tag tag--response">response</span>}
                           {step.condition && <span className="tag tag--cond">{step.condition}</span>}
                           {step.latencyMs !== undefined && (
                             <span className="tag tag--latency">{step.latencyMs} ms</span>

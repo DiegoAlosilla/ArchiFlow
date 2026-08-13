@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { orthogonalImportedRoute, projectWaypointToBox, simplifyOrthogonalRoute } from '../web/src/edgeGeometry';
+import { anchorForPoint, closestPointOnBox, orthogonalImportedRoute, pointKeepingGrabOffset, projectWaypointToBox, simplifyOrthogonalRoute } from '../web/src/edgeGeometry';
 
 function expectOrthogonal(points: Array<{ x: number; y: number }>) {
   for (let index = 1; index < points.length; index++) {
@@ -70,5 +70,26 @@ describe('geometría importada de Draw.io', () => {
       { x: 779, y: 1798.25 },
       { x: 779, y: 1525 },
     ]);
+  });
+
+  it('permite arrastrar un extremo por cualquiera de los cuatro bordes', () => {
+    const target = { x: 100, y: 200, width: 200, height: 100 };
+    expect(closestPointOnBox(target, { x: 138, y: 208 })).toEqual({ x: 138, y: 200 });
+    expect(closestPointOnBox(target, { x: 292, y: 245 })).toEqual({ x: 300, y: 245 });
+    expect(closestPointOnBox(target, { x: 180, y: 294 })).toEqual({ x: 180, y: 300 });
+    expect(closestPointOnBox(target, { x: 104, y: 260 })).toEqual({ x: 100, y: 260 });
+  });
+
+  it('guarda el extremo como anclaje relativo para que sobreviva al movimiento del nodo', () => {
+    const target = { x: 100, y: 200, width: 200, height: 100 };
+    expect(anchorForPoint(target, { x: 250, y: 300 })).toEqual({ x: 0.75, y: 1 });
+  });
+
+  it('mantiene la esquina tomada bajo el mouse al mover una etiqueta', () => {
+    expect(pointKeepingGrabOffset(
+      { x: 200, y: 100 },
+      { x: 238, y: 108 },
+      { x: 310, y: 205 },
+    )).toEqual({ x: 272, y: 197 });
   });
 });

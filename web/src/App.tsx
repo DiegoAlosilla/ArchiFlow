@@ -10,6 +10,7 @@ import { ExportMenu } from './ExportMenu';
 import { Timeline } from './Timeline';
 import { clock } from './playback';
 import type { Selection } from './selection';
+import { TrafficInspector } from './TrafficInspector';
 
 /** Los valores de serie salen del esquema, para no tenerlos en dos sitios. */
 const DEFAULT_ANIMATION = AnimationSchema.parse({});
@@ -84,19 +85,29 @@ export default function App() {
     if (selectedFlow && selectedFlow.id !== flowId) setFlowId(selectedFlow.id);
   }, [selectedFlow, flowId]);
 
-  // Cambiar de flujo reinicia la reproducción y arranca sola: el usuario ha
-  // pedido ver ese recorrido, no darle a play después.
+  const playbackFlowKey = selectedFlow && selectedDiagram
+    ? `${selectedDiagram.id}:${selectedFlow.id}`
+    : null;
+  const previousPlaybackFlow = useRef<string | null>(null);
+
+  // Solo un cambio REAL de flujo reinicia y reproduce. Una edición reemplaza
+  // el objeto IR completo al guardar, pero no debe convertir esa nueva
+  // referencia en un falso cambio de flujo ni reactivar una pausa del usuario.
   useEffect(() => {
     if (!selectedFlow) {
       clock.pause();
       clock.setDuration(0);
       setCurrentStep(-1);
+      previousPlaybackFlow.current = null;
       return;
     }
     clock.setDuration(selectedFlow.durationMs);
-    clock.seek(0);
-    clock.play();
-  }, [selectedFlow]);
+    if (previousPlaybackFlow.current !== playbackFlowKey) {
+      previousPlaybackFlow.current = playbackFlowKey;
+      clock.seek(0);
+      clock.play();
+    }
+  }, [playbackFlowKey, selectedFlow?.durationMs]);
 
   /**
    * Ajustes de animación: el fichero manda y la barra inferior los cambia solo
@@ -116,6 +127,10 @@ export default function App() {
   const settings = animation ?? ir?.animation ?? DEFAULT_ANIMATION;
 
   const handleStepChange = useCallback((index: number) => setCurrentStep(index), []);
+  const pinnedTrafficStep = selection?.kind === 'step' && selection.flowId === selectedFlow?.id
+    ? selectedFlow.steps[selection.index] ?? null
+    : null;
+  const trafficStep = pinnedTrafficStep ?? (currentStep >= 0 ? selectedFlow?.steps[currentStep] ?? null : selectedFlow?.steps[0] ?? null);
 
   const focusIssue = useCallback((issue: Issue) => {
     if (!ir || !issue.path) return;
@@ -350,6 +365,7 @@ export default function App() {
                   if (next?.kind === 'edge') setInspectorTab('arrange');
                 }}
                 onStepChange={handleStepChange}
+                currentStep={currentStep}
                 mutate={mutate}
                 animation={settings}
                 presentation={presenting}
@@ -376,6 +392,11 @@ export default function App() {
 
           {editing && ir && (
             <aside className="inspector-panel">
+              <TrafficInspector
+                step={trafficStep}
+                pinned={Boolean(pinnedTrafficStep)}
+                onFollow={() => setSelection(null)}
+              />
               <div className="inspector-tabs" role="tablist" aria-label="Propiedades">
                 {([['style', 'Estilo'], ['text', 'Texto'], ['arrange', 'Organizar']] as const).map(([id, label]) => (
                   <button key={id} type="button" className={inspectorTab === id ? 'is-active' : ''} onClick={() => setInspectorTab(id)}>{label}</button>

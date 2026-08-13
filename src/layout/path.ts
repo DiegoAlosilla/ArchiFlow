@@ -121,8 +121,74 @@ export interface Route {
   labelOffset: Point;
 }
 
+export interface LabelObstacle extends EndpointBox {}
+
 /** Cuánto se aparta la etiqueta del trazo. */
 const LABEL_GAP = 13;
+
+const overlaps = (
+  center: Point,
+  width: number,
+  height: number,
+  obstacle: LabelObstacle,
+  margin = 6,
+) => center.x + width / 2 + margin > obstacle.x
+  && center.x - width / 2 - margin < obstacle.x + obstacle.width
+  && center.y + height / 2 + margin > obstacle.y
+  && center.y - height / 2 - margin < obstacle.y + obstacle.height;
+
+/**
+ * Posición legible y local para el texto de una arista.
+ *
+ * Se prueban primero las repisas horizontales desde el origen hacia el
+ * destino, y dentro de cada una se buscan posiciones laterales antes que el
+ * centro. Así una etiqueta no salta a una dependencia vecina solo porque un
+ * tramo lejano sea unos píxeles más largo. Los obstáculos pueden ser cajas de
+ * servicios o las cabeceras de las zonas.
+ */
+export function placeEdgeLabel(
+  points: Point[],
+  obstacles: readonly LabelObstacle[] = [],
+  width = 150,
+  height = 22,
+): Point {
+  const horizontal = points.slice(1).map((point, index) => ({
+    a: points[index]!,
+    b: point,
+    index,
+  })).filter(({ a, b }) => Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) && Math.abs(b.x - a.x) >= 24);
+
+  const fractions = [0.22, 0.5, 0.78];
+  for (const segment of horizontal) {
+    for (const fraction of fractions) {
+      const center = {
+        x: segment.a.x + (segment.b.x - segment.a.x) * fraction,
+        y: segment.a.y - LABEL_GAP,
+      };
+      if (!obstacles.some((obstacle) => overlaps(center, width, height, obstacle))) return center;
+    }
+  }
+
+  // Si todas las repisas están ocupadas, usa el primer tramo suficientemente
+  // largo y coloca el texto a su lado superior. Sigue perteneciendo al inicio
+  // de la conexión y evita invadir el nodo destino.
+  const segments = points.slice(1).map((point, index) => ({ a: points[index]!, b: point }));
+  for (const { a, b } of segments) {
+    if (distance(a, b) < 42) continue;
+    const at = { x: a.x + (b.x - a.x) * 0.32, y: a.y + (b.y - a.y) * 0.32 };
+    const vertical = Math.abs(b.y - a.y) > Math.abs(b.x - a.x);
+    const candidates = vertical
+      ? [
+          { x: at.x + width / 2 + LABEL_GAP, y: at.y - LABEL_GAP },
+          { x: at.x - width / 2 - LABEL_GAP, y: at.y - LABEL_GAP },
+        ]
+      : [{ x: at.x, y: at.y - LABEL_GAP }];
+    const free = candidates.find((candidate) => !obstacles.some((obstacle) => overlaps(candidate, width, height, obstacle)));
+    if (free) return free;
+  }
+
+  return labelPlacement(points).offset;
+}
 
 /**
  * Punto a la fracción `t` de una polilínea.
@@ -203,32 +269,38 @@ export function routeEdge(
   const last = points[points.length - 1]!;
   d += ` L ${last.x.toFixed(1)},${last.y.toFixed(1)}`;
 
-  const labelAt = midpoint(points);
-  return { d, points, labelAt, labelOffset: offsetFromLine(points, labelAt) };
+  const label = labelPlacement(points);
+  return { d, points, labelAt: label.at, labelOffset: label.offset };
 }
 
 /**
- * Aparta un punto de la polilínea en perpendicular al segmento que lo
- * contiene. En un tramo vertical la etiqueta se va a la derecha; en uno
- * horizontal, hacia arriba, que es donde la vista la busca.
+ * Coloca la etiqueta sobre el tramo horizontal principal.
+ *
+ * El punto medio por longitud puede caer en una bajada vertical y deja textos
+ * al costado o debajo de la flecha. Buscar el tramo horizontal más largo crea
+ * una repisa visual estable. Si la conexión es completamente vertical, el
+ * texto queda arriba y a la derecha del centro, nunca debajo del trazo.
  */
-function offsetFromLine(points: Point[], at: Point): Point {
-  let segment: [Point, Point] = [points[0]!, points[1]!];
-  let best = Infinity;
-
+function labelPlacement(points: Point[]): { at: Point; offset: Point } {
+  let shelf: [Point, Point] | undefined;
+  let shelfLength = 0;
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1]!;
     const b = points[i]!;
-    const distanceToSegment = Math.abs(distance(a, at) + distance(at, b) - distance(a, b));
-    if (distanceToSegment < best) {
-      best = distanceToSegment;
-      segment = [a, b];
-    }
+    const width = Math.abs(b.x - a.x);
+    const height = Math.abs(b.y - a.y);
+    if (width < height || width < 24 || width <= shelfLength) continue;
+    shelf = [a, b];
+    shelfLength = width;
   }
 
-  const [a, b] = segment;
-  const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
-  return horizontal ? { x: at.x, y: at.y - LABEL_GAP } : { x: at.x + LABEL_GAP, y: at.y };
+  if (shelf) {
+    const at = { x: (shelf[0].x + shelf[1].x) / 2, y: (shelf[0].y + shelf[1].y) / 2 };
+    return { at, offset: { x: at.x, y: at.y - LABEL_GAP } };
+  }
+
+  const at = midpoint(points);
+  return { at, offset: { x: at.x + LABEL_GAP, y: at.y - LABEL_GAP } };
 }
 
 function midpoint(points: Point[]): Point {

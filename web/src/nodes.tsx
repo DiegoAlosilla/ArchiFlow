@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react';
 import { kindStyle } from './kinds';
 import type { ServiceNodeData, ZoneNodeData } from './layout';
@@ -13,7 +14,7 @@ import { vendorIconPath } from '../../src/icons';
 const SIDES = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
 export function ZoneNode({ data, id, selected }: NodeProps) {
-  const { zone, editing, onResizeEnd } = data as ZoneNodeData;
+  const { zone, editing, onResizeEnd, onLabelChange } = data as ZoneNodeData;
   const cloudZone = /cloud|azure/i.test(`${zone.label} ${zone.platform ?? ''}`);
   const boundary = !zone.label;
   const shapeClass = zone.appearance?.shape ? ` shape--${zone.appearance.shape}` : '';
@@ -44,7 +45,14 @@ export function ZoneNode({ data, id, selected }: NodeProps) {
         } as React.CSSProperties}
       >
         <div className="zone__header">
-          {zone.label && <span className="zone__label">{zone.label}</span>}
+          {zone.label && (
+            <InlineCanvasText
+              className="zone__label"
+              value={zone.label}
+              editing={editing}
+              onCommit={(value) => onLabelChange?.(id.slice('zone:'.length), value)}
+            />
+          )}
           {zone.platform && <span className="zone__platform">{zone.platform}</span>}
         </div>
       </div>
@@ -53,7 +61,7 @@ export function ZoneNode({ data, id, selected }: NodeProps) {
 }
 
 export function ServiceNode({ data, id, selected }: NodeProps) {
-  const { node, editing, onResizeEnd } = data as ServiceNodeData;
+  const { node, editing, onResizeEnd, onLabelChange } = data as ServiceNodeData;
   const style = kindStyle(node.kind);
   const faithful = node.tags.includes('drawio:faithful');
   const renderKind = node.tags.find((tag) => tag.startsWith('drawio:render:'))?.slice('drawio:render:'.length);
@@ -102,6 +110,7 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
           '--shape-stroke-width': `${appearance?.strokeWidth ?? 1}px`,
           '--frame-width': `${appearance?.frameWidth ?? 192}px`,
           '--frame-height': `${appearance?.frameHeight ?? 18}px`,
+          '--endpoint-count': Math.max(1, node.provides.length),
         } as React.CSSProperties}
         data-node-id={id}
         title={node.description ?? undefined}
@@ -123,7 +132,12 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
         </span>
 
         {!hideLabel && <span className="node__text">
-          <span className="node__label">{node.label}</span>
+          <InlineCanvasText
+            className="node__label"
+            value={node.label}
+            editing={editing}
+            onCommit={(value) => onLabelChange?.(id, value)}
+          />
           <span className="node__subtitle">
             {subtitle}
             {/* Expandido, la primera operación ya tiene su fila abajo. */}
@@ -156,3 +170,64 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
 }
 
 export const nodeTypes = { zone: ZoneNode, service: ServiceNode };
+
+interface InlineCanvasTextProps {
+  className: string;
+  value: string;
+  editing?: boolean;
+  onCommit: (value: string) => void;
+}
+
+/** Doble clic para editar un texto sin abandonar el canvas. */
+function InlineCanvasText({ className, value, editing, onCommit }: InlineCanvasTextProps) {
+  const [active, setActive] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    ref.current?.focus();
+    const selection = window.getSelection();
+    const range = document.createRange();
+    if (ref.current && selection) {
+      range.selectNodeContents(ref.current);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }, [active]);
+
+  const finish = (commit: boolean) => {
+    const next = ref.current?.textContent?.trim() ?? value;
+    setActive(false);
+    if (commit && next && next !== value) onCommit(next);
+    else if (ref.current) ref.current.textContent = value;
+  };
+
+  return (
+    <span
+      ref={ref}
+      className={`${className}${active ? ' is-inline-editing nodrag nopan' : ''}`}
+      contentEditable={active}
+      suppressContentEditableWarning
+      title={editing ? 'Doble clic para editar' : undefined}
+      onDoubleClick={(event) => {
+        if (!editing) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setActive(true);
+      }}
+      onBlur={() => active && finish(true)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          ref.current?.blur();
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          finish(false);
+        }
+      }}
+    >
+      {value}
+    </span>
+  );
+}

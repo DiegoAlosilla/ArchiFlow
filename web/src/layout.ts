@@ -1,7 +1,7 @@
 import type { Edge, Node } from '@xyflow/react';
 import type { Box, LaidOutGraph } from '@archiflow/layout';
 import type { Ir, IrEdge, IrNode, IrZone } from '@archiflow/schema';
-import { computeSlots, type EdgeSlot } from '@archiflow/layout';
+import { computeSlots, slotEdgeRefs, type EdgeSlot } from '@archiflow/layout';
 
 /**
  * Traducción del layout de ELK a nodos y aristas de React Flow.
@@ -22,20 +22,30 @@ export interface ZoneNodeData extends Record<string, unknown> {
   zone: IrZone;
   editing?: boolean;
   onResizeEnd?: (id: string, box: ResizeBox) => void;
+  onLabelChange?: (id: string, label: string) => void;
 }
 
 export interface ServiceNodeData extends Record<string, unknown> {
   node: IrNode;
   editing?: boolean;
   onResizeEnd?: (id: string, box: ResizeBox) => void;
+  onLabelChange?: (id: string, label: string) => void;
 }
 
 export interface EdgeData extends Record<string, unknown> {
   edge: IrEdge;
   /** Lado y hueco asignados a cada extremo, para que las aristas no se pisen. */
   slot: EdgeSlot;
+  /** Operaciones del flujo activo a las que debe anclarse cada extremo. */
+  sourceOperation?: string;
+  targetOperation?: string;
+  activeFlowId?: string;
+  activeStep?: import('@archiflow/schema').IrStep;
   editing?: boolean;
-  onRouteChange?: (index: number, points: Array<{ x: number; y: number }>) => void;
+  onRouteChange?: (points: Array<{ x: number; y: number }>) => void;
+  onEndpointChange?: (end: 'source' | 'target', anchor: { x: number; y: number }) => void;
+  onLabelPositionChange?: (position: { x: number; y: number }) => void;
+  onLabelChange?: (label: string) => void;
 }
 
 /**
@@ -118,7 +128,7 @@ export function toReactFlow(laid: LaidOutGraph, ir: Ir): LayoutResult {
     });
   }
 
-  const slots = computeSlots(absoluteBoxes(laid), ir.edges);
+  const slots = computeSlots(absoluteBoxes(laid), slotEdgeRefs(ir));
 
   const edges: Edge<EdgeData>[] = [];
   for (const edge of ir.edges) {

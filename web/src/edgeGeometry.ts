@@ -51,6 +51,64 @@ export function projectWaypointToBox(box: EdgeBox, waypoint: EdgePoint): EdgePoi
   return { x: center.x + dx * scale, y: center.y + dy * scale };
 }
 
+/** Proyecta el puntero al borde más cercano, como el extremo libre de Draw.io. */
+export function closestPointOnBox(box: EdgeBox, point: EdgePoint): EdgePoint {
+  const left = box.x;
+  const right = box.x + box.width;
+  const top = box.y;
+  const bottom = box.y + box.height;
+  const x = Math.min(right, Math.max(left, point.x));
+  const y = Math.min(bottom, Math.max(top, point.y));
+
+  if (point.x < left || point.x > right || point.y < top || point.y > bottom) {
+    return projectWaypointToBox(box, point);
+  }
+
+  const sides = [
+    { distance: Math.abs(point.y - top), point: { x, y: top } },
+    { distance: Math.abs(right - point.x), point: { x: right, y } },
+    { distance: Math.abs(bottom - point.y), point: { x, y: bottom } },
+    { distance: Math.abs(point.x - left), point: { x: left, y } },
+  ];
+  sides.sort((a, b) => a.distance - b.distance);
+  return sides[0]!.point;
+}
+
+export function anchorForPoint(box: EdgeBox, point: EdgePoint): EdgePoint {
+  return {
+    x: box.width === 0 ? 0.5 : Math.max(0, Math.min(1, (point.x - box.x) / box.width)),
+    y: box.height === 0 ? 0.5 : Math.max(0, Math.min(1, (point.y - box.y) / box.height)),
+  };
+}
+
+/** Mantiene bajo el puntero el punto exacto desde el que se tomó la figura. */
+export function pointKeepingGrabOffset(position: EdgePoint, pointerStart: EdgePoint, pointerNow: EdgePoint): EdgePoint {
+  return {
+    x: pointerNow.x + position.x - pointerStart.x,
+    y: pointerNow.y + position.y - pointerStart.y,
+  };
+}
+
+/** Ajusta un rótulo al lado superior del tramo más cercano de la ruta. */
+export function pointAboveRoute(points: EdgePoint[], pointer: EdgePoint, gap = 16): EdgePoint {
+  const segments = points.slice(1).map((point, index) => ({ a: points[index]!, b: point }));
+  const horizontal = segments.filter(({ a, b }) => Math.abs(b.x - a.x) >= Math.abs(b.y - a.y));
+  const candidates = (horizontal.length > 0 ? horizontal : segments).map(({ a, b }) => {
+    const isHorizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
+    const projected = isHorizontal
+      ? { x: Math.max(Math.min(a.x, b.x), Math.min(Math.max(a.x, b.x), pointer.x)), y: a.y }
+      : { x: a.x, y: Math.max(Math.min(a.y, b.y), Math.min(Math.max(a.y, b.y), pointer.y)) };
+    return {
+      distance: Math.hypot(pointer.x - projected.x, pointer.y - projected.y),
+      point: isHorizontal
+        ? { x: projected.x, y: projected.y - gap }
+        : { x: projected.x + gap, y: projected.y - gap },
+    };
+  });
+  candidates.sort((a, b) => a.distance - b.distance);
+  return candidates[0]?.point ?? { x: pointer.x, y: pointer.y - gap };
+}
+
 /**
  * Elimina duplicados consecutivos antes de buscar tramos colineales. Draw.io
  * guarda a veces el mismo mxPoint dos veces; retirar ambos puntos convertiría
