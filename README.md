@@ -96,7 +96,7 @@ Le describes la arquitectura a un agente con la skill `archiflow-design` y produ
 npx archiflow scan ./mi-microservicio -o evidence.json
 ```
 
-Recolecta evidencias de un repositorio **Quarkus o Spring Boot**: endpoints expuestos, clientes REST y su URL real, canales de Kafka, bases de datos, cachés. La skill `archiflow-scan` convierte esas evidencias en el diagrama.
+Recolecta evidencias de un repositorio **Quarkus o Spring Boot**: endpoints expuestos, clientes REST y su URL real, canales de Kafka, bases de datos, cachés. La skill `archiflow-scan` convierte esas evidencias en un recorrido completo: flechas separadas de request y response, bodies, parámetros, headers obligatorios y recursos concretos como endpoints destino, mapas Redis, pools, tablas, colecciones y topics. Si un valor solo existe fuera del repositorio, conserva la variable y deja un marcador visible para completarlo.
 
 La estrategia es híbrida a propósito: el recolector es determinista y solo reporta lo que puede demostrar (con fichero y línea); la interpretación —cómo se llama el destino, en qué zona vive, en qué orden ocurren los pasos— la hace el agente. **El resultado es un borrador de alta calidad para revisar, no una verdad automática.** El análisis estático no ve llamadas construidas en tiempo de ejecución ni URLs que llegan por variable de entorno, y el propio comando avisa de lo que no supo resolver.
 

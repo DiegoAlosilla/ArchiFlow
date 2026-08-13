@@ -28,8 +28,10 @@ export interface ZoneNodeData extends Record<string, unknown> {
 export interface ServiceNodeData extends Record<string, unknown> {
   node: IrNode;
   editing?: boolean;
+  selectedOperation?: number;
   onResizeEnd?: (id: string, box: ResizeBox) => void;
   onLabelChange?: (id: string, label: string) => void;
+  onOperationSelect?: (nodeId: string, index: number) => void;
 }
 
 export interface EdgeData extends Record<string, unknown> {

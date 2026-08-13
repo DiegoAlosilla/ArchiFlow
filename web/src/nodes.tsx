@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react';
 import { NODE_KINDS, type NodeKind } from '@archiflow/schema';
+import { nodeHeight, nodeWidth } from '@archiflow/layout';
 import { kindStyle } from './kinds';
 import type { ServiceNodeData, ZoneNodeData } from './layout';
 import { explicitIconPath, vendorIconPath } from '../../src/icons';
@@ -62,7 +63,7 @@ export function ZoneNode({ data, id, selected }: NodeProps) {
 }
 
 export function ServiceNode({ data, id, selected }: NodeProps) {
-  const { node, editing, onResizeEnd, onLabelChange } = data as ServiceNodeData;
+  const { node, editing, selectedOperation, onResizeEnd, onLabelChange, onOperationSelect } = data as ServiceNodeData;
   const style = kindStyle(node.kind);
   const requestedIconKind = node.appearance?.icon?.startsWith('general:')
     ? node.appearance.icon.slice('general:'.length)
@@ -82,6 +83,9 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
   const subtitle = faithful ? '' : (node.tech ?? style.label);
   const endpoint = node.provides[0];
   const expanded = node.expanded && node.provides.length > 0;
+  const automaticNode = { ...node, layout: undefined };
+  const minimumWidth = expanded ? nodeWidth(automaticNode) : 140;
+  const minimumHeight = expanded ? nodeHeight(automaticNode) : 56;
   const appearance = node.appearance;
   const vendorIcon = explicitIconPath(appearance?.icon, appearance?.image)
     ?? vendorIconPath(node.tags, node.label, node.tech, node.platform);
@@ -93,8 +97,8 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
       {editing && (
         <NodeResizer
           isVisible={selected}
-          minWidth={140}
-          minHeight={56}
+          minWidth={minimumWidth}
+          minHeight={minimumHeight}
           lineClassName="resizer__line"
           handleClassName="resizer__handle"
           onResizeEnd={(_event, params) => onResizeEnd?.(id, params)}
@@ -163,13 +167,20 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
         {expanded && (
           <div className="node__endpoints">
             {node.provides.map((operation, index) => (
-              <span
+              <button
+                type="button"
                 key={operation.id ?? `${operation.method}-${operation.path}-${index}`}
-                className="node__endpoint"
+                className={`node__endpoint nodrag nopan${selectedOperation === index ? ' is-selected' : ''}`}
+                title={`${operation.method ?? 'OP'} ${operation.path ?? operation.label ?? operation.id ?? 'operación'}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onOperationSelect?.(id, index);
+                }}
               >
                 <b>{operation.method ?? 'OP'}</b>{' '}
                 {operation.path ?? operation.label ?? operation.id ?? 'operación'}
-              </span>
+              </button>
             ))}
           </div>
         )}

@@ -1,4 +1,4 @@
-import { NODE_KINDS, PROTOCOLS, type Ir } from '@archiflow/schema';
+import { HTTP_METHODS, NODE_KINDS, PROTOCOLS, type Ir } from '@archiflow/schema';
 import type { Mutation } from '@archiflow/shared';
 import { CheckboxField, NumberField, SelectField, TextField } from './fields';
 import { kindLabel } from './kinds';
@@ -36,10 +36,34 @@ export function Inspector({ ir, selection, onSelect, mutate }: Props) {
   }
 
   if (selection.kind === 'node') return <NodeInspector {...{ ir, selection, onSelect, mutate }} />;
+  if (selection.kind === 'operation') return <OperationInspector {...{ ir, selection, onSelect, mutate }} />;
   if (selection.kind === 'zone') return <ZoneInspector {...{ ir, selection, onSelect, mutate }} />;
   if (selection.kind === 'flow') return <FlowInspector {...{ ir, selection, onSelect, mutate }} />;
   if (selection.kind === 'edge') return <EdgeInspector {...{ ir, selection, onSelect, mutate }} />;
   return <StepInspector {...{ ir, selection, onSelect, mutate }} />;
+}
+
+function OperationInspector({ ir, selection, mutate }: Props) {
+  if (selection?.kind !== 'operation') return null;
+  const node = ir.nodes.find((candidate) => candidate.id === selection.nodeId);
+  const operation = node?.provides[selection.index];
+  if (!node || !operation) return <div className="inspector inspector--empty"><p>Este endpoint ya no existe.</p></div>;
+
+  const patch = (fields: Record<string, unknown>) => {
+    const provides = node.provides.map((candidate, index) => index === selection.index ? { ...candidate, ...fields } : candidate);
+    void mutate({ op: 'node.update', id: node.id, patch: { provides } });
+  };
+
+  return <div className="inspector">
+    <header className="inspector__header">
+      <span className="inspector__kind">Endpoint · {node.label}</span>
+    </header>
+    <SelectField label="Método" value={operation.method} options={[...HTTP_METHODS]} allowEmpty="(sin método)" onCommit={(value) => patch({ method: value || undefined })} />
+    <TextField label="Ruta completa" value={operation.path} mono placeholder="/v1/recurso/{id}" onCommit={(value) => patch({ path: value })} />
+    <TextField label="Nombre" value={operation.label} onCommit={(value) => patch({ label: value })} />
+    <TextField label="Descripción" value={operation.description} multiline onCommit={(value) => patch({ description: value })} />
+    <div className="inspector__meta">ID de conexión: <code>{operation.id ?? '(sin id)'}</code>. La tarjeta pertenece al microservicio y no se mueve por separado. La ruta se muestra completa en el canvas.</div>
+  </div>;
 }
 
 function EdgeInspector({ ir, selection, mutate }: Props) {

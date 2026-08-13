@@ -1908,16 +1908,27 @@ button {
 
 .node__endpoint {
   display: block;
-  height: 22px;
-  padding: 4px 6px;
+  box-sizing: border-box;
+  height: 42px;
+  padding: 6px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   color: var(--text-dim);
-  font: 10px/1 ui-monospace, monospace;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  font: 10px/14px ui-monospace, monospace;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.node__endpoint:hover,
+.node__endpoint.is-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 17%, var(--bg-panel));
+  color: var(--text);
+  outline: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .node__endpoint b {
