@@ -43,6 +43,7 @@ const NODE_PULSE_MS = 420;
 
 export function FlowPackets({ flow, animation, onStepChange }: Props) {
   const dotRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const contractRefs = useRef<Array<HTMLDivElement | null>>([]);
   const hotNodes = useRef(new Set<string>());
   const firingEdges = useRef(new Set<string>());
   const lastStep = useRef(-1);
@@ -57,6 +58,13 @@ export function FlowPackets({ flow, animation, onStepChange }: Props) {
 
   useEffect(() => {
     if (!flow) return undefined;
+
+    const serviceElements = [...document.querySelectorAll<HTMLElement>('.react-flow__node-service')];
+    const intersects = (a: DOMRect, b: DOMRect, margin = 5) =>
+      a.right + margin > b.left
+      && a.left - margin < b.right
+      && a.bottom + margin > b.top
+      && a.top - margin < b.bottom;
 
     const nodeElements = new Map<string, HTMLElement | null>();
     const nodeElement = (id: string) => {
@@ -79,12 +87,17 @@ export function FlowPackets({ flow, animation, onStepChange }: Props) {
 
     const place = (dot: AnimationDot, index: number, progress: number | null) => {
       const element = dotRefs.current[index];
+      const contract = contractRefs.current[index];
       if (!element) return;
 
       if (progress === null) {
         if (element.style.visibility !== 'hidden') {
           element.style.visibility = 'hidden';
           element.style.opacity = '0';
+        }
+        if (contract) {
+          contract.style.visibility = 'hidden';
+          contract.style.opacity = '0';
         }
         return;
       }
@@ -96,6 +109,25 @@ export function FlowPackets({ flow, animation, onStepChange }: Props) {
       element.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%) scale(${scale.toFixed(2)})`;
       element.style.visibility = 'visible';
       element.style.opacity = String(opacity);
+      if (contract) {
+        // La tarjeta pertenece al tramo que recorre el paquete. Colocarla a la
+        // derecha hacía que, en retornos horizontales, invadiera la siguiente
+        // dependencia. Centrada y por encima conserva la lectura de la flecha
+        // y deja libre la caja de destino.
+        contract.style.visibility = 'visible';
+        contract.style.opacity = String(opacity);
+        const transforms = [
+          `translate(${x}px, ${y - 14}px) translate(-50%, -100%) scale(${scale.toFixed(2)})`,
+          `translate(${x - 14}px, ${y - 14}px) translate(-100%, -100%) scale(${scale.toFixed(2)})`,
+          `translate(${x + 14}px, ${y - 14}px) translate(0, -100%) scale(${scale.toFixed(2)})`,
+        ];
+        for (const transform of transforms) {
+          contract.style.transform = transform;
+          const contractRect = contract.getBoundingClientRect();
+          const touchesService = serviceElements.some((service) => intersects(contractRect, service.getBoundingClientRect()));
+          if (!touchesService) break;
+        }
+      }
     };
 
     const render = (timeMs: number) => {
@@ -172,20 +204,44 @@ export function FlowPackets({ flow, animation, onStepChange }: Props) {
   return (
     <ViewportPortal>
       {dots.map((dot, index) => (
-        <div
-          key={dot.key}
-          ref={(element) => {
-            dotRefs.current[index] = element;
-          }}
-          className={`packet${dot.async ? ' packet--async' : ''}${dot.trailIndex > 0 ? ' packet--trail' : ''}`}
-          style={
-            {
-              '--packet-color': protocolColor[dot.protocol],
-              visibility: 'hidden',
-              opacity: 0,
-            } as React.CSSProperties
-          }
-        />
+        <div key={dot.key}>
+          <div
+            ref={(element) => {
+              dotRefs.current[index] = element;
+            }}
+            className={`packet${dot.async ? ' packet--async' : ''}${dot.trailIndex > 0 ? ' packet--trail' : ''}`}
+            style={
+              {
+                '--packet-color': protocolColor[dot.protocol],
+                visibility: 'hidden',
+                opacity: 0,
+              } as React.CSSProperties
+            }
+          />
+          {dot.trailIndex === 0 && dot.stepIndex !== undefined && (() => {
+            const step = flow.steps[dot.stepIndex];
+            if (!step || (!step.request && !step.response && !step.returns)) return null;
+            return (
+              <div
+                ref={(element) => {
+                  contractRefs.current[index] = element;
+                }}
+                className={`packet-contract${step.request ? ' packet-contract--request' : ' packet-contract--response'}`}
+                style={
+                  {
+                    '--packet-color': protocolColor[dot.protocol],
+                    visibility: 'hidden',
+                    opacity: 0,
+                  } as React.CSSProperties
+                }
+              >
+                <strong>{step.label}</strong>
+                {step.request && <span><b>Request</b><em>Detalles en el inspector de tráfico</em></span>}
+                {(step.response || step.returns) && <span><b>Response</b><em>Detalles en el inspector de tráfico</em></span>}
+              </div>
+            );
+          })()}
+        </div>
       ))}
     </ViewportPortal>
   );

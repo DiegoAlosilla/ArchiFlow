@@ -1,8 +1,11 @@
-import type { Ir, IrFlow, NodeKind } from '@archiflow/schema';
+import { useState } from 'react';
+import type { Ir, IrFlow } from '@archiflow/schema';
 import type { DiagramEntry, Mutation } from '@archiflow/shared';
 import { clock } from './playback';
 import { protocolColor } from './kinds';
 import type { Selection } from './selection';
+import { FIGURES, type FigureDefinition, type FigureGroup } from './figures';
+import { kindStyle } from './kinds';
 
 interface Props {
   ir: Ir | null;
@@ -17,7 +20,8 @@ interface Props {
   selection: Selection;
   onSelect: (selection: Selection) => void;
   mutate: (...mutations: Mutation[]) => Promise<boolean>;
-  onAddNode: (kind?: NodeKind) => void;
+  onUseFigure: (figure: FigureDefinition) => void;
+  onUseCustomImage: (image: string) => void;
   onIssueClick: (issue: DiagramEntry['issues'][number]) => void;
 }
 
@@ -42,12 +46,50 @@ export function Sidebar({
   selection,
   onSelect,
   mutate,
-  onAddNode,
+  onUseFigure,
+  onUseCustomImage,
   onIssueClick,
 }: Props) {
   const issues = selectedDiagram?.issues ?? [];
   const errors = issues.filter((issue) => issue.level === 'error');
   const warnings = issues.filter((issue) => issue.level === 'warning');
+  const [figureSearch, setFigureSearch] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [imageError, setImageError] = useState<string | null>(null);
+  const selectedNode = selection?.kind === 'node'
+    ? ir?.nodes.find((node) => node.id === selection.id)
+    : undefined;
+  const visibleFigures = FIGURES.filter((figure) => `${figure.label} ${figure.group}`.toLowerCase().includes(figureSearch.toLowerCase()));
+  const groups: FigureGroup[] = ['General', 'Azure', 'UML'];
+
+  const useUrl = () => {
+    const value = imageUrl.trim();
+    if (!/^https?:\/\//i.test(value)) {
+      setImageError('Pega una URL que empiece por http:// o https://');
+      return;
+    }
+    setImageError(null);
+    onUseCustomImage(value);
+  };
+
+  const useFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type)) {
+      setImageError('Usa una imagen PNG, JPG, WebP o SVG.');
+      return;
+    }
+    if (file.size > 1_800_000) {
+      setImageError('La imagen debe pesar menos de 1.8 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImageError(null);
+      onUseCustomImage(String(reader.result));
+    };
+    reader.onerror = () => setImageError('No se pudo leer la imagen.');
+    reader.readAsDataURL(file);
+  };
 
   const addFlow = () => {
     const id = freshId('flujo', new Set(flows.map((flow) => flow.id)));
@@ -72,24 +114,34 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <section className="panel shape-library">
-        <div className="shape-library__search" aria-label="Buscar figuras">Buscar figuras</div>
-        <h2 className="panel__title">General</h2>
-        <div className="shape-grid">
-          {([
-            ['service', 'Servicio', '▭'],
-            ['frontend', 'Web', '▤'],
-            ['client', 'Canal', '▯'],
-            ['gateway', 'Gateway', '◇'],
-            ['database', 'Base de datos', '◉'],
-            ['cache', 'Caché', '▰'],
-            ['broker', 'Evento', '⇄'],
-            ['external', 'Externo', '⬡'],
-          ] as [NodeKind, string, string][]).map(([kind, label, glyph]) => (
-            <button key={kind} type="button" className="shape-item" onClick={() => onAddNode(kind)} title={`Añadir ${label}`}>
-              <span className="shape-item__glyph" aria-hidden="true">{glyph}</span>
-              <span>{label}</span>
-            </button>
-          ))}
+        <input className="shape-library__search" aria-label="Buscar figuras" placeholder="Buscar Azure, UML…" value={figureSearch} onChange={(event) => setFigureSearch(event.target.value)} />
+        {selectedNode && <div className="shape-library__target"><b>Aplicar a</b><span>{selectedNode.label}</span></div>}
+        {groups.map((group) => {
+          const figures = visibleFigures.filter((figure) => figure.group === group);
+          if (figures.length === 0) return null;
+          return <div className="shape-group" key={group}>
+            <h2 className="panel__title">{group}</h2>
+            <div className="shape-grid">
+              {figures.map((figure) => (
+                <button key={figure.id} type="button" className="shape-item" onClick={() => onUseFigure(figure)} title={`${selectedNode ? 'Aplicar a' : 'Añadir'} ${figure.label}`}>
+                  <span className="shape-item__glyph" aria-hidden="true">
+                    {figure.image ? <img src={figure.image} alt="" /> : <svg viewBox="0 0 24 24">{kindStyle(figure.kind).icon}</svg>}
+                  </span>
+                  <span>{figure.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>;
+        })}
+        <div className="shape-custom">
+          <h2 className="panel__title">Mi imagen</h2>
+          <p>Selecciona un cuadro y pega una URL o carga un archivo.</p>
+          <div className="shape-custom__url">
+            <input value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https://…/iphone.svg" aria-label="URL de imagen propia" />
+            <button type="button" onClick={useUrl}>Usar</button>
+          </div>
+          <label className="shape-custom__upload">Cargar PNG, JPG, WebP o SVG<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => useFile(event.target.files?.[0])} /></label>
+          {imageError && <span className="shape-custom__error">{imageError}</span>}
         </div>
       </section>
 
@@ -196,6 +248,8 @@ export function Sidebar({
                             {step.protocol}
                           </span>
                           {step.async && <span className="tag tag--async">async</span>}
+                          {step.request && <span className="tag tag--request">request</span>}
+                          {(step.response || step.returns) && <span className="tag tag--response">response</span>}
                           {step.condition && <span className="tag tag--cond">{step.condition}</span>}
                           {step.latencyMs !== undefined && (
                             <span className="tag tag--latency">{step.latencyMs} ms</span>

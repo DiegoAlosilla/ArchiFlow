@@ -152,6 +152,24 @@ export function routeAroundObstacles(start: Point, end: Point, obstacles: readon
 
   if (boxes.some((box) => isInside(start, box) || isInside(end, box))) return remember(key, null);
 
+  // Primero prueba los recorridos ortogonales mínimos. Suele haber otros
+  // nodos en el lienzo aunque ninguno bloquee esta conexión; sin este atajo,
+  // A* podía elegir una guía lejana y añadir curvas innecesarias.
+  if ((Math.abs(start.x - end.x) < EPSILON || Math.abs(start.y - end.y) < EPSILON)
+      && !isBlocked(start, end, boxes)) {
+    return remember(key, [start, end]);
+  }
+  const elbows = [
+    { x: end.x, y: start.y },
+    { x: start.x, y: end.y },
+  ];
+  for (const elbow of elbows) {
+    if (boxes.some((box) => isInside(elbow, box))) continue;
+    if (!isBlocked(start, elbow, boxes) && !isBlocked(elbow, end, boxes)) {
+      return remember(key, [start, elbow, end]);
+    }
+  }
+
   const xs = unique([start.x, end.x, ...boxes.flatMap((box) => [box.x - MARGIN, box.x + box.width + MARGIN])]);
   const ys = unique([start.y, end.y, ...boxes.flatMap((box) => [box.y - MARGIN, box.y + box.height + MARGIN])]);
   const vertices: Vertex[] = [];

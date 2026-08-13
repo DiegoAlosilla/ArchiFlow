@@ -43,6 +43,7 @@ interface Props {
   selection: Selection;
   onSelect: (selection: Selection) => void;
   onStepChange: (index: number) => void;
+  currentStep: number;
   mutate: (...mutations: Mutation[]) => Promise<boolean>;
   animation: AnimationSettings;
   presentation?: boolean;
@@ -52,9 +53,10 @@ interface Props {
   focusRequest?: { selection: Selection; nonce: number } | null;
 }
 
-function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mutate, animation, presentation = false, pathMode = false, pathStart = null, onPathNodeClick, focusRequest }: Props) {
+function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, currentStep, mutate, animation, presentation = false, pathMode = false, pathStart = null, onPathNodeClick, focusRequest }: Props) {
   const [base, setBase] = useState<LaidOutGraph | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
+  const [minimapOpen, setMinimapOpen] = useState(true);
   const { fitView } = useReactFlow();
 
   const signature = layoutSignature(ir);
@@ -123,17 +125,28 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
 
         return {
           ...node,
-          data: { ...node.data, editing, onResizeEnd },
+          data: {
+            ...node.data,
+            editing,
+            onResizeEnd,
+            onLabelChange: (id: string, label: string) => {
+              void mutate(
+                node.type === 'zone'
+                  ? { op: 'zone.update', id, patch: { label } }
+                  : { op: 'node.update', id, patch: { label } },
+              );
+            },
+          },
           className: classes.join(' ') || undefined,
           // El resizer solo aparece en el nodo seleccionado de React Flow, así
           // que la selección del inspector tiene que reflejarse aquí también.
           selected: isSelected,
-          draggable: editing && node.type !== 'zone',
+          draggable: editing,
           selectable: editing,
         };
       });
     },
-    [flow, editing, selection, onResizeEnd, pathMode, pathStart],
+    [flow, editing, selection, onResizeEnd, pathMode, pathStart, mutate],
   );
 
   useEffect(() => {
@@ -195,7 +208,16 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
       const classes = [];
       if (active) classes.push(active.has(edge.id) ? 'is-in-flow' : 'is-out-of-flow');
       const declaredIndex = (edge.data as EdgeData | undefined)?.edge.declaredIndex;
-      const isSelected = selection?.kind === 'edge' && declaredIndex === selection.index;
+      const selectedStep = selection?.kind === 'step' && selection.flowId === flow?.id
+        ? flow.steps[selection.index]
+        : undefined;
+      const playingStep = currentStep >= 0 ? flow?.steps[currentStep] : undefined;
+      const preferredStep = selectedStep ?? playingStep;
+      const activeStep = preferredStep?.edgeId === edge.id
+        ? preferredStep
+        : flow?.steps.find((step) => step.edgeId === edge.id);
+      const isSelected = (selection?.kind === 'edge' && declaredIndex === selection.index)
+        || (selection?.kind === 'step' && selection.flowId === flow?.id && activeStep?.index === selection.index);
       if (isSelected) classes.push('is-selected');
       return {
         ...edge,
@@ -204,22 +226,65 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         reconnectable: editing,
         data: {
           ...edge.data,
+          sourceOperation: activeStep?.fromOp,
+          targetOperation: activeStep?.toOp,
+          activeFlowId: flow?.id,
+          activeStep,
           editing,
-          onRouteChange: (index: number, points: Array<{ x: number; y: number }>) => {
-            const current = ir.edges.find((candidate) => candidate.declaredIndex === index);
-            if (!current) return;
+          onRouteChange: (points: Array<{ x: number; y: number }>) => {
+            if (flow && activeStep) {
+              void mutate({
+                op: 'step.update',
+                flowId: flow.id,
+                index: activeStep.index,
+                patch: { layout: { ...activeStep.layout, points } },
+              });
+              return;
+            }
+            const current = ir.edges.find((candidate) => candidate.declaredIndex === declaredIndex);
+            if (current?.declaredIndex === undefined) return;
+            void mutate({ op: 'edge.update', index: current.declaredIndex, patch: { layout: { ...current.layout, points } } });
+          },
+          onEndpointChange: (end: 'source' | 'target', anchor: { x: number; y: number }) => {
+            if (flow && activeStep) {
+              void mutate({
+                op: 'step.update',
+                flowId: flow.id,
+                index: activeStep.index,
+                patch: {
+                  layout: {
+                    ...activeStep.layout,
+                    [end === 'source' ? 'sourceAnchor' : 'targetAnchor']: anchor,
+                  },
+                },
+              });
+              return;
+            }
+            const current = ir.edges.find((candidate) => candidate.declaredIndex === declaredIndex);
+            if (current?.declaredIndex === undefined) return;
             void mutate({
               op: 'edge.update',
-              index,
-              patch: { layout: { ...current.layout, points } },
+              index: current.declaredIndex,
+              patch: {
+                layout: {
+                  ...current.layout,
+                  [end === 'source' ? 'sourceAnchor' : 'targetAnchor']: anchor,
+                },
+              },
             });
+          },
+          onLabelPositionChange: (position: { x: number; y: number }) => {
+            if (!flow || !activeStep) return;
+            void mutate({ op: 'step.update', flowId: flow.id, index: activeStep.index, patch: { labelPosition: position } });
+          },
+          onLabelChange: (label: string) => {
+            if (!flow || !activeStep) return;
+            void mutate({ op: 'step.update', flowId: flow.id, index: activeStep.index, patch: { label } });
           },
         },
       };
     });
-  }, [computed, editing, flow, ir.edges, mutate, selection]);
-  const selectedStep = selection?.kind === 'step' ? ir.flows.find((candidate) => candidate.id === selection.flowId)?.steps[selection.index] : undefined;
-
+  }, [computed, currentStep, editing, flow, ir.edges, mutate, selection]);
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => setNodes((current) => applyNodeChanges(changes, current)),
     [],
@@ -231,14 +296,29 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
   /** Al soltar un nodo se fija su posición en el YAML. */
   const onNodeDragStop = useCallback<OnNodeDrag>(
     (_event, node) => {
-      if (node.type === 'zone') return;
+      if (node.type === 'zone') {
+        const zone = ir.zones.find((candidate) => `zone:${candidate.id}` === node.id);
+        void mutate({
+          op: 'zone.update',
+          id: node.id.slice('zone:'.length),
+          patch: {
+            layout: {
+              x: Math.round(node.position.x),
+              y: Math.round(node.position.y),
+              width: Math.round(node.measured?.width ?? zone?.layout?.width ?? 260),
+              height: Math.round(node.measured?.height ?? zone?.layout?.height ?? 140),
+            },
+          },
+        });
+        return;
+      }
       void mutate({
         op: 'node.update',
         id: node.id,
         patch: { layout: { x: Math.round(node.position.x), y: Math.round(node.position.y) } },
       });
     },
-    [mutate],
+    [ir.zones, mutate],
   );
 
   /**
@@ -262,8 +342,9 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
 
   const onReconnect = useCallback<OnReconnect>(
     (oldEdge, connection) => {
-      const edge = (oldEdge.data as EdgeData | undefined)?.edge;
-      if (!edge || edge.declaredIndex === undefined || !connection.source || !connection.target) return;
+      const data = oldEdge.data as EdgeData | undefined;
+      const edge = data?.edge;
+      if (!edge || !connection.source || !connection.target) return;
       const anchor = (handle: string | null | undefined) => {
         if (handle === 'top') return { x: 0.5, y: 0 };
         if (handle === 'right') return { x: 1, y: 0.5 };
@@ -271,6 +352,27 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         if (handle === 'left') return { x: 0, y: 0.5 };
         return undefined;
       };
+      if (flow && data?.activeStep) {
+        const step = data.activeStep;
+        const reference = (nodeId: string, previousNode: string, operation: string | undefined) =>
+          nodeId === previousNode && operation ? `${nodeId}/${operation}` : nodeId;
+        void mutate({
+          op: 'step.update',
+          flowId: flow.id,
+          index: step.index,
+          patch: {
+            from: reference(connection.source, step.from, step.fromOp),
+            to: reference(connection.target, step.to, step.toOp),
+            layout: {
+              ...step.layout,
+              sourceAnchor: anchor(connection.sourceHandle) ?? step.layout?.sourceAnchor,
+              targetAnchor: anchor(connection.targetHandle) ?? step.layout?.targetAnchor,
+            },
+          },
+        });
+        return;
+      }
+      if (edge.declaredIndex === undefined) return;
       const { sourcePoint: _sourcePoint, targetPoint: _targetPoint, ...layout } = edge.layout ?? {};
       void mutate({
         op: 'edge.update',
@@ -289,7 +391,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         },
       });
     },
-    [mutate],
+    [flow, mutate],
   );
 
   if (!computed) {
@@ -302,7 +404,7 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
   }
 
   return (
-    <div className={`canvas${editing ? ' canvas--editing' : ''}${presentation ? ' canvas--presentation' : ''}${ir.meta.layoutMode === 'faithful' ? ' canvas--faithful' : ''}`}>
+    <div className={`canvas${editing ? ' canvas--editing' : ''}${presentation ? ' canvas--presentation' : ''}${minimapOpen && !presentation ? ' canvas--minimap-open' : ''}${ir.meta.layoutMode === 'faithful' ? ' canvas--faithful' : ''}`}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -319,6 +421,11 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
           onSelect(node.type === 'zone' ? { kind: 'zone', id: node.id.slice('zone:'.length) } : { kind: 'node', id: node.id });
         }}
         onEdgeClick={(_event, edge) => {
+          const activeStep = (edge.data as EdgeData | undefined)?.activeStep;
+          if (flow && activeStep) {
+            onSelect({ kind: 'step', flowId: flow.id, index: activeStep.index });
+            return;
+          }
           const index = (edge.data as EdgeData | undefined)?.edge.declaredIndex;
           if (index !== undefined) onSelect({ kind: 'edge', index });
         }}
@@ -342,14 +449,17 @@ function CanvasInner({ ir, flow, editing, selection, onSelect, onStepChange, mut
         <Background id="fina" variant={BackgroundVariant.Lines} gap={24} lineWidth={1} color="var(--grid-fine)" />
         <Background id="gruesa" variant={BackgroundVariant.Lines} gap={120} lineWidth={1} color="var(--grid-major)" />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable nodeStrokeWidth={2} maskColor="var(--minimap-mask)" />
-        <FlowPackets flow={flow} animation={animation} onStepChange={onStepChange} />
-        {selectedStep && (selectedStep.request || selectedStep.response) && (
-          <div className="contract-panel">
-            {selectedStep.request && <details open><summary>Request</summary><pre>{selectedStep.request}</pre></details>}
-            {selectedStep.response && <details open><summary>Response</summary><pre>{selectedStep.response}</pre></details>}
-          </div>
+        {minimapOpen && <MiniMap pannable zoomable nodeStrokeWidth={2} maskColor="var(--minimap-mask)" />}
+        {!presentation && (
+          <button
+            type="button"
+            className={`minimap-toggle nodrag nopan${minimapOpen ? ' is-open' : ''}`}
+            aria-label={minimapOpen ? 'Minimizar vista previa' : 'Mostrar vista previa'}
+            title={minimapOpen ? 'Minimizar vista previa' : 'Mostrar vista previa'}
+            onClick={() => setMinimapOpen((open) => !open)}
+          >{minimapOpen ? '−' : 'Mapa'}</button>
         )}
+        <FlowPackets flow={flow} animation={animation} onStepChange={onStepChange} />
       </ReactFlow>
     </div>
   );

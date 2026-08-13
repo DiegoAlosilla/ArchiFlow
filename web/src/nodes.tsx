@@ -1,7 +1,9 @@
+import { useEffect, useRef, useState } from 'react';
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react';
+import { NODE_KINDS, type NodeKind } from '@archiflow/schema';
 import { kindStyle } from './kinds';
 import type { ServiceNodeData, ZoneNodeData } from './layout';
-import { vendorIconPath } from '../../src/icons';
+import { explicitIconPath, vendorIconPath } from '../../src/icons';
 
 /**
  * Los nodos no leen el reloj de reproducción. El resaltado durante la
@@ -13,7 +15,7 @@ import { vendorIconPath } from '../../src/icons';
 const SIDES = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
 export function ZoneNode({ data, id, selected }: NodeProps) {
-  const { zone, editing, onResizeEnd } = data as ZoneNodeData;
+  const { zone, editing, onResizeEnd, onLabelChange } = data as ZoneNodeData;
   const cloudZone = /cloud|azure/i.test(`${zone.label} ${zone.platform ?? ''}`);
   const boundary = !zone.label;
   const shapeClass = zone.appearance?.shape ? ` shape--${zone.appearance.shape}` : '';
@@ -44,7 +46,14 @@ export function ZoneNode({ data, id, selected }: NodeProps) {
         } as React.CSSProperties}
       >
         <div className="zone__header">
-          {zone.label && <span className="zone__label">{zone.label}</span>}
+          {zone.label && (
+            <InlineCanvasText
+              className="zone__label"
+              value={zone.label}
+              editing={editing}
+              onCommit={(value) => onLabelChange?.(id.slice('zone:'.length), value)}
+            />
+          )}
           {zone.platform && <span className="zone__platform">{zone.platform}</span>}
         </div>
       </div>
@@ -53,8 +62,15 @@ export function ZoneNode({ data, id, selected }: NodeProps) {
 }
 
 export function ServiceNode({ data, id, selected }: NodeProps) {
-  const { node, editing, onResizeEnd } = data as ServiceNodeData;
+  const { node, editing, onResizeEnd, onLabelChange } = data as ServiceNodeData;
   const style = kindStyle(node.kind);
+  const requestedIconKind = node.appearance?.icon?.startsWith('general:')
+    ? node.appearance.icon.slice('general:'.length)
+    : undefined;
+  const generalIconKind = requestedIconKind && NODE_KINDS.includes(requestedIconKind as NodeKind)
+    ? requestedIconKind as NodeKind
+    : node.kind;
+  const visualStyle = kindStyle(generalIconKind);
   const faithful = node.tags.includes('drawio:faithful');
   const renderKind = node.tags.find((tag) => tag.startsWith('drawio:render:'))?.slice('drawio:render:'.length);
   const presentationClass = renderKind ? ` node--${renderKind}` : '';
@@ -66,8 +82,9 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
   const subtitle = faithful ? '' : (node.tech ?? style.label);
   const endpoint = node.provides[0];
   const expanded = node.expanded && node.provides.length > 0;
-  const vendorIcon = vendorIconPath(node.tags, node.label, node.tech, node.platform);
   const appearance = node.appearance;
+  const vendorIcon = explicitIconPath(appearance?.icon, appearance?.image)
+    ?? vendorIconPath(node.tags, node.label, node.tech, node.platform);
   const shapeClass = appearance?.shape ? ` shape--${appearance.shape}` : '';
   const vertical = appearance?.verticalAlign === 'top' ? 'flex-start' : appearance?.verticalAlign === 'bottom' ? 'flex-end' : 'center';
 
@@ -102,6 +119,7 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
           '--shape-stroke-width': `${appearance?.strokeWidth ?? 1}px`,
           '--frame-width': `${appearance?.frameWidth ?? 192}px`,
           '--frame-height': `${appearance?.frameHeight ?? 18}px`,
+          '--endpoint-count': Math.max(1, node.provides.length),
         } as React.CSSProperties}
         data-node-id={id}
         title={node.description ?? undefined}
@@ -117,13 +135,18 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
             <img src={vendorIcon} alt="" />
           ) : (
             <svg viewBox="0 0 24 24" width="20" height="20">
-              {style.icon}
+              {visualStyle.icon}
             </svg>
           )}
         </span>
 
         {!hideLabel && <span className="node__text">
-          <span className="node__label">{node.label}</span>
+          <InlineCanvasText
+            className="node__label"
+            value={node.label}
+            editing={editing}
+            onCommit={(value) => onLabelChange?.(id, value)}
+          />
           <span className="node__subtitle">
             {subtitle}
             {/* Expandido, la primera operación ya tiene su fila abajo. */}
@@ -156,3 +179,64 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
 }
 
 export const nodeTypes = { zone: ZoneNode, service: ServiceNode };
+
+interface InlineCanvasTextProps {
+  className: string;
+  value: string;
+  editing?: boolean;
+  onCommit: (value: string) => void;
+}
+
+/** Doble clic para editar un texto sin abandonar el canvas. */
+function InlineCanvasText({ className, value, editing, onCommit }: InlineCanvasTextProps) {
+  const [active, setActive] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    ref.current?.focus();
+    const selection = window.getSelection();
+    const range = document.createRange();
+    if (ref.current && selection) {
+      range.selectNodeContents(ref.current);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }, [active]);
+
+  const finish = (commit: boolean) => {
+    const next = ref.current?.textContent?.trim() ?? value;
+    setActive(false);
+    if (commit && next && next !== value) onCommit(next);
+    else if (ref.current) ref.current.textContent = value;
+  };
+
+  return (
+    <span
+      ref={ref}
+      className={`${className}${active ? ' is-inline-editing nodrag nopan' : ''}`}
+      contentEditable={active}
+      suppressContentEditableWarning
+      title={editing ? 'Doble clic para editar' : undefined}
+      onDoubleClick={(event) => {
+        if (!editing) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setActive(true);
+      }}
+      onBlur={() => active && finish(true)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          ref.current?.blur();
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          finish(false);
+        }
+      }}
+    >
+      {value}
+    </span>
+  );
+}

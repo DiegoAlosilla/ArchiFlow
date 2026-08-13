@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { anchorPoint, computeSlots, pointBelongsToBox, routeEdge } from '../src/layout/index.js';
+import { anchorPoint, computeSlots, endpointAnchorPoint, pointBelongsToBox, routeEdge } from '../src/layout/index.js';
+import type { IrNode } from '../src/schema/compile.js';
 import type { Box } from '../src/layout/index.js';
 
 const box = (id: string, x: number, y: number): Box => ({ id, x, y, width: 100, height: 50 });
@@ -33,14 +34,16 @@ describe('elección de lado', () => {
       ['b', box('b', 0, 300)],
     ]);
     const slots = computeSlots(boxes, [
-      { id: 'a__b', source: 'a', target: 'b' },
-      { id: 'b__a', source: 'b', target: 'a' },
+      { id: 'a__b', source: 'a', target: 'b', lane: 'request' },
+      { id: 'b__a', source: 'b', target: 'a', lane: 'response' },
     ]);
 
     // La ida sale por abajo de A; la vuelta sale por arriba de B. Nunca
     // comparten el mismo punto.
     expect(slots.get('a__b')!.sourceSide).toBe('bottom');
     expect(slots.get('b__a')!.sourceSide).toBe('top');
+    expect(slots.get('a__b')!.sourceIndex).toBeLessThan(slots.get('b__a')!.targetIndex);
+    expect(slots.get('a__b')!.targetIndex).toBeLessThan(slots.get('b__a')!.sourceIndex);
   });
 });
 
@@ -98,6 +101,47 @@ describe('anchorPoint', () => {
 
   it('centra la única arista de un lado', () => {
     expect(anchorPoint({ x: 0, y: 0, width: 100, height: 50 }, 'top', 0, 1)).toEqual({ x: 50, y: 0 });
+  });
+
+  it('abre más los dos carriles de ida y vuelta', () => {
+    const target = { x: 0, y: 0, width: 100, height: 50 };
+    expect(anchorPoint(target, 'bottom', 0, 2).x).toBe(25);
+    expect(anchorPoint(target, 'bottom', 1, 2).x).toBe(75);
+  });
+});
+
+describe('endpointAnchorPoint', () => {
+  const service: IrNode = {
+    id: 'auth',
+    label: 'auth',
+    kind: 'service',
+    tags: [],
+    provides: [
+      { id: 'login', method: 'POST', path: '/login' },
+      { id: 'refresh', method: 'POST', path: '/refresh' },
+    ],
+    expanded: true,
+    topics: [],
+    external: false,
+    degree: 1,
+  };
+
+  it('ancla cada referencia a su tarjeta horizontal y no al borde del servicio', () => {
+    const serviceBox = { x: 100, y: 200, width: 220, height: 120 };
+    const login = endpointAnchorPoint(serviceBox, service, 'login', 'right', 0, 1)!;
+    const refresh = endpointAnchorPoint(serviceBox, service, 'refresh', 'right', 0, 1)!;
+
+    expect(login.x).toBe(206);
+    expect(login.y).toBe(269);
+    expect(refresh.x).toBe(306);
+    expect(refresh.y).toBe(login.y);
+    expect(login.x).toBeLessThan(serviceBox.x + serviceBox.width);
+  });
+
+  it('no inventa un anclaje para una operación ausente o un nodo colapsado', () => {
+    const serviceBox = { x: 0, y: 0, width: 220, height: 120 };
+    expect(endpointAnchorPoint(serviceBox, service, 'missing', 'right', 0, 1)).toBeUndefined();
+    expect(endpointAnchorPoint(serviceBox, { ...service, expanded: false }, 'login', 'right', 0, 1)).toBeUndefined();
   });
 });
 

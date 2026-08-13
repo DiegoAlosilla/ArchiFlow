@@ -51,9 +51,11 @@ Agrupadores visuales: capa arquitectónica, clúster, red o dominio. Son lo que 
 | `repo` | string | — | Habilita el contraste contra el código |
 | `tags` | string[] | `[]` | |
 | `provides` | operación[] | `[]` | Endpoints expuestos |
+| `expanded` | boolean | `false` | Dibuja las operaciones como filas anclables dentro del servicio |
 | `topics` | string[] | `[]` | Solo tiene sentido en `kind: broker` |
 | `external` | boolean | `false` | Lo dibuja con trazo discontinuo |
 | `layout` | `{x, y}` | — | Posición fijada a mano, relativa a la zona |
+| `appearance` | objeto | — | Colores, silueta e imagen elegida en el editor |
 
 ### `layout`
 
@@ -66,6 +68,18 @@ Lo escribe el editor gráfico al arrastrar un nodo, y gana sobre el auto-layout:
 ```
 
 Es el único campo de presentación del formato. Borrarlo devuelve el nodo al layout automático (el inspector tiene un botón para hacerlo). En las zonas admite además `width` y `height`, y sus coordenadas son absolutas.
+
+### `appearance`
+
+```yaml
+appearance:
+  fill: '#ffffff'
+  stroke: '#334155'
+  icon: azure:function-app
+  # image: https://ejemplo.com/iphone.svg
+```
+
+`icon` referencia una figura del catálogo local (`azure:*` o `uml:*`). `image` permite una URL `http(s)` o una imagen PNG, JPG, WebP o SVG cargada desde el editor y embebida como `data:image/...`. La imagen propia prevalece sobre `icon`. La semántica sigue viviendo en `kind`: cambiar la figura no convierte, por ejemplo, un canal en un servicio.
 
 ### Valores de `kind`
 
@@ -113,7 +127,20 @@ Un flujo es un escenario de ejecución con nombre. **Es lo que se anima.**
 | `condition` | string | — | `cache miss`, `cliente premium` |
 | `latencyMs` | number | — | Se muestra y modula la duración de la animación |
 | `returns` | string | — | Documenta la respuesta sin añadir un paso de vuelta |
+| `request` | string | — | Contrato o ejemplo que viaja hacia el destino; acompaña al paquete animado |
+| `response` | string | — | Contrato o ejemplo que vuelve; en un paso inverso identifica el paquete como respuesta |
+| `headers` | lista de `{name, value?, required?, description?}` | `[]` | Headers que viajan en el paso; los obligatorios se resaltan en el inspector |
+| `labelPosition` | `{x, y}` | — | Preferencia horizontal del rótulo; el renderer siempre la proyecta encima de la flecha |
+| `layout` | ruta | — | Puntos de control del conector para este paso; permite editar aristas inferidas |
 | `note` | string | — | |
+
+Los extremos `from` y `to` aceptan `nodo/operación` cuando la operación tiene `id` en `provides`. En un nodo `expanded`, la flecha se ancla a esa fila concreta. Para que una llamada realizada por un endpoint nazca en su caja, usa también la operación en el origen: `from: auth-service/autenticar`.
+
+En una vista que explica ejecución completa, representa también los retornos como pasos (`base → endpoint` y finalmente `endpoint → canal`). Usa `request` en los pasos de ida y `response` en esos pasos inversos: así el editor identifica correctamente cada paquete. El auto-layout toma los requests como dirección del orden espacial; las respuestas recorren ese orden de vuelta sin invertir las capas.
+
+El renderer asigna carriles paralelos y estables a ida y vuelta. Las etiquetas automáticas se colocan encima del tramo horizontal principal; `labelPosition` solo es necesario cuando una revisión humana quiere ajustar una excepción.
+La tarjeta animada prueba posiciones superiores centrada, hacia el origen y hacia el destino, y elige la primera que no cubra una caja de servicio.
+`sourceAnchor` y `targetAnchor` expresan la posición relativa del extremo sobre su caja (`0..1` en cada eje). El editor permite arrastrar inicio y punta por cualquiera de los cuatro bordes y conserva esos anclajes aunque el nodo se mueva.
 
 ### Valores de `protocol`
 

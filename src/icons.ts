@@ -34,3 +34,30 @@ export function vendorIconPath(tags: string[], label: string, tech?: string, pla
   if (/on[ -]?prem|datacenter|centro de datos|legacy/.test(identity)) return '/brands/on-premise.svg';
   return undefined;
 }
+
+/** Figuras que el usuario puede elegir directamente desde el editor. */
+export const figureIconPaths: Record<string, string> = {
+  'azure:api-management': '/azure/api-management.svg',
+  'azure:application-gateway': '/azure/application-gateway.svg',
+  'azure:front-door': '/azure/front-door.svg',
+  'azure:cosmos-db': '/azure/cosmos-db.svg',
+  'azure:event-hubs': '/azure/event-hubs.svg',
+  'azure:app-service': '/azure/app-service.svg',
+  'azure:function-app': '/azure/function-app.svg',
+  'azure:kubernetes-service': '/azure/kubernetes-service.svg',
+  'azure:sql-database': '/azure/sql-database.svg',
+  'azure:service-bus': '/azure/service-bus.svg',
+  'azure:storage-account': '/azure/storage-account.svg',
+  'azure:virtual-network': '/azure/virtual-network.svg',
+  'azure:key-vault': '/azure/key-vault.svg',
+  'uml:actor': '/uml/actor.svg',
+  'uml:component': '/uml/component.svg',
+  'uml:interface': '/uml/interface.svg',
+  'uml:package': '/uml/package.svg',
+  'uml:use-case': '/uml/use-case.svg',
+  'uml:class': '/uml/class.svg',
+};
+
+export function explicitIconPath(icon?: string, image?: string): string | undefined {
+  return image || (icon ? figureIconPaths[icon] : undefined);
+}

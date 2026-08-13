@@ -1,5 +1,6 @@
 import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js';
 import type { Ir, IrNode } from '../schema/compile.js';
+import { anchorPoint, type Side } from './anchors.js';
 
 /**
  * Auto-layout jerárquico con ELK, compartido por el renderer web y los
@@ -28,7 +29,9 @@ export const NODE_HEIGHT = 76;
  */
 export const NODE_HEADER = 58;
 export const ENDPOINT_ROW = 26;
-/** Aire bajo la última operación. */
+export const ENDPOINT_GAP = 8;
+export const ENDPOINT_MIN_WIDTH = 164;
+/** Aire alrededor de las operaciones. */
 const ENDPOINT_PADDING = 10;
 const MIN_NODE_WIDTH = 180;
 const MAX_NODE_WIDTH = 300;
@@ -44,15 +47,22 @@ const MIN_ZONE_HEIGHT = 140;
 export function nodeWidth(node: IrNode): number {
   if (node.layout?.width) return node.layout.width;
   const longest = Math.max(node.label.length, (node.tech ?? '').length + 2);
-  return Math.min(MAX_NODE_WIDTH, Math.max(MIN_NODE_WIDTH, Math.round(longest * 8.5 + 52)));
+  const headerWidth = Math.min(MAX_NODE_WIDTH, Math.max(MIN_NODE_WIDTH, Math.round(longest * 8.5 + 52)));
+  if (node.expanded && node.provides.length > 0) {
+    return Math.max(
+      headerWidth,
+      28 + node.provides.length * ENDPOINT_MIN_WIDTH + Math.max(0, node.provides.length - 1) * ENDPOINT_GAP,
+    );
+  }
+  return headerWidth;
 }
 
 export function nodeHeight(node: IrNode): number {
   if (node.layout?.height) return node.layout.height;
-  // Un servicio expandido dibuja sus operaciones dentro de la caja; el
-  // contenedor conserva una única topología pero reserva una fila para cada una.
+  // Los endpoints se disponen horizontalmente en una única banda. Así una
+  // conexión vertical entra o sale de su tarjeta sin atravesar las demás.
   if (node.expanded && node.provides.length > 0) {
-    return NODE_HEADER + node.provides.length * ENDPOINT_ROW + ENDPOINT_PADDING;
+    return NODE_HEADER + ENDPOINT_ROW + ENDPOINT_PADDING;
   }
   return NODE_HEIGHT;
 }
@@ -63,6 +73,46 @@ export interface Box {
   y: number;
   width: number;
   height: number;
+}
+
+/**
+ * Punto de conexión de una operación expandida dentro de la caja del servicio.
+ *
+ * La topología sigue teniendo un nodo por servicio, pero una referencia
+ * `servicio/operacion` debe verse distinta: la ruta nace o termina en la fila
+ * concreta del endpoint, no en el borde genérico del contenedor.
+ */
+export function endpointAnchorPoint(
+  box: Pick<Box, 'x' | 'y' | 'width' | 'height'>,
+  node: IrNode,
+  operationId: string | undefined,
+  side: Side,
+  index: number,
+  count: number,
+): { x: number; y: number } | undefined {
+  const row = endpointBox(box, node, operationId);
+  if (!row) return undefined;
+  return anchorPoint(row, side, index, count);
+}
+
+/** Rectángulo absoluto de una operación expandida dentro de su servicio. */
+export function endpointBox(
+  box: Pick<Box, 'x' | 'y' | 'width' | 'height'>,
+  node: IrNode,
+  operationId: string | undefined,
+): Omit<Box, 'id'> | undefined {
+  if (!operationId || !node.expanded) return undefined;
+  const operationIndex = node.provides.findIndex((operation) => operation.id === operationId);
+  if (operationIndex < 0) return undefined;
+  const countOperations = node.provides.length;
+  const available = box.width - 28 - Math.max(0, countOperations - 1) * ENDPOINT_GAP;
+  const operationWidth = Math.max(80, available / countOperations);
+  return {
+    x: box.x + 14 + operationIndex * (operationWidth + ENDPOINT_GAP),
+    y: box.y + NODE_HEADER,
+    width: operationWidth,
+    height: 22,
+  };
 }
 
 export interface LaidOutZone extends Box {
@@ -79,6 +129,49 @@ export interface LaidOutGraph {
 }
 
 /**
+ * Aristas que deciden el orden espacial del diagrama.
+ *
+ * Un flujo operativo contiene ida y vuelta. Si ELK recibe también las
+ * respuestas, ve ciclos (canal → servicio → datos → servicio → canal) y puede
+ * invertir las capas. Las respuestas siguen dibujándose y animándose, pero no
+ * deben decidir dónde vive cada capa: para eso basta el sentido del request.
+ */
+export function layoutEdgeRefs(ir: Ir): Array<{ id: string; source: string; target: string }> {
+  const requests = new Map<string, { id: string; source: string; target: string }>();
+  for (const flow of ir.flows) {
+    for (const step of flow.steps) {
+      const responseOnly = !step.request && Boolean(step.response || step.returns);
+      if (responseOnly) continue;
+      const key = `${step.from}>${step.to}`;
+      if (!requests.has(key)) requests.set(key, { id: `layout:${key}`, source: step.from, target: step.to });
+    }
+  }
+  return requests.size > 0
+    ? [...requests.values()]
+    : ir.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target }));
+}
+
+/** Aristas reales con su carril estable de ida o vuelta. */
+export function slotEdgeRefs(ir: Ir): Array<{ id: string; source: string; target: string; lane: 'request' | 'response' | 'neutral' }> {
+  const lanes = new Map<string, 'request' | 'response' | 'neutral'>();
+  for (const flow of ir.flows) {
+    for (const step of flow.steps) {
+      const lane = !step.request && (step.response || step.returns) ? 'response' : step.request ? 'request' : 'neutral';
+      const current = lanes.get(step.edgeId);
+      // Si una misma dirección se usa con ambos significados, request manda:
+      // conserva el sentido principal y evita que el carril salte entre flujos.
+      if (!current || lane === 'request') lanes.set(step.edgeId, lane);
+    }
+  }
+  return ir.edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    lane: lanes.get(edge.id) ?? 'neutral',
+  }));
+}
+
+/**
  * Firma de lo que realmente afecta al cálculo de ELK.
  *
  * Deja fuera las posiciones fijadas a mano a propósito: se aplican después,
@@ -88,10 +181,10 @@ export interface LaidOutGraph {
  */
 export function layoutSignature(ir: Ir): string {
   const nodes = ir.nodes
-    .map((node) => `${node.id}:${node.zone ?? ''}:${nodeWidth(node)}`)
+    .map((node) => `${node.id}:${node.zone ?? ''}:${nodeWidth(node)}:${nodeHeight(node)}`)
     .join('|');
   const zones = ir.zones.map((zone) => zone.id).join('|');
-  const edges = ir.edges.map((edge) => edge.id).join('|');
+  const edges = layoutEdgeRefs(ir).map((edge) => `${edge.source}>${edge.target}`).join('|');
   return `${nodes}#${zones}#${edges}`;
 }
 
@@ -131,7 +224,7 @@ export async function computeBaseLayout(ir: Ir): Promise<LaidOutGraph> {
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
       // Separación generosa: el espacio entre capas es lo que da sitio a las
       // aristas para no montarse unas sobre otras al cambiar de nivel.
-      'elk.layered.spacing.nodeNodeBetweenLayers': '110',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '140',
       'elk.layered.spacing.edgeNodeBetweenLayers': '36',
       'elk.layered.spacing.edgeEdgeBetweenLayers': '20',
       'elk.spacing.nodeNode': '56',
@@ -147,7 +240,7 @@ export async function computeBaseLayout(ir: Ir): Promise<LaidOutGraph> {
       'elk.edgeRouting': 'ORTHOGONAL',
     },
     children: [...zoneChildren, ...looseNodes.map(toElkNode)],
-    edges: ir.edges.map((edge) => ({
+    edges: layoutEdgeRefs(ir).map((edge) => ({
       id: edge.id,
       sources: [edge.source],
       targets: [edge.target],

@@ -42,6 +42,21 @@ describe('parseDiagram', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('acepta figuras de catálogo e imágenes propias seguras', () => {
+    const catalog = parseDiagram(minimal.replace('  - id: a', "  - id: a\n    appearance: { icon: 'azure:function-app' }"));
+    expect(catalog.ok).toBe(true);
+    expect(catalog.diagram?.nodes[0]?.appearance?.icon).toBe('azure:function-app');
+
+    const custom = parseDiagram(minimal.replace('  - id: a', "  - id: a\n    appearance: { image: 'https://example.com/iphone.svg' }"));
+    expect(custom.ok).toBe(true);
+    expect(custom.diagram?.nodes[0]?.appearance?.image).toContain('iphone.svg');
+  });
+
+  it('rechaza esquemas peligrosos como imagen propia', () => {
+    const parsed = parseDiagram(minimal.replace('  - id: a', "  - id: a\n    appearance: { image: 'javascript:alert(1)' }"));
+    expect(parsed.ok).toBe(false);
+  });
+
   it('avisa de un nodo que no participa en ningún flujo', () => {
     const result = parseDiagram(`${minimal}\n  - id: huerfano\n`.replace('flows:', 'flows:'));
     const orphanWarning = parseDiagram(
@@ -142,11 +157,14 @@ describe('compile', () => {
   });
 
   it('resuelve un endpoint a la topología del servicio y conserva contratos', () => {
-    const parsed = parseDiagram(`archiflow: 1\nname: Endpoints\nnodes:\n  - id: api\n  - id: cuentas\n    expanded: true\n    provides:\n      - id: listar\n        method: GET\n        path: /v1/cuentas\nflows:\n  - id: f\n    steps:\n      - from: api\n        to: cuentas/listar\n        request: '{"cliente": "1"}'\n        response: '{"cuentas": []}'\n`);
+    const parsed = parseDiagram(`archiflow: 1\nname: Endpoints\nnodes:\n  - id: api\n  - id: cuentas\n    expanded: true\n    provides:\n      - id: listar\n        method: GET\n        path: /v1/cuentas\nflows:\n  - id: f\n    steps:\n      - from: api\n        to: cuentas/listar\n        headers:\n          - { name: Authorization, value: 'Bearer [omitido]', required: true }\n        request: '{"cliente": "1"}'\n        response: '{"cuentas": []}'\n        labelPosition: { x: 320, y: 180 }\n        layout:\n          points:\n            - { x: 250, y: 120 }\n            - { x: 250, y: 180 }\n`);
     expect(parsed.ok).toBe(true);
     const step = compile(parsed.diagram!).flows[0]!.steps[0]!;
     expect(step.to).toBe('cuentas');
     expect(step.toOp).toBe('listar');
     expect(step.request).toContain('cliente');
+    expect(step.labelPosition).toEqual({ x: 320, y: 180 });
+    expect(step.headers).toEqual([{ name: 'Authorization', value: 'Bearer [omitido]', required: true }]);
+    expect(step.layout?.points).toHaveLength(2);
   });
 });

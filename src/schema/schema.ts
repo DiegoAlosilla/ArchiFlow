@@ -101,6 +101,10 @@ export type LayoutOverride = z.infer<typeof LayoutSchema>;
  * colores, tipografía y alineación que el autor ya decidió.
  */
 const Paint = z.string().regex(/^(?:none|#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6})$/);
+const ImageSource = z.string().max(2_500_000).refine(
+  (value) => /^https?:\/\//i.test(value) || /^data:image\/(?:png|jpeg|webp|svg\+xml);base64,/i.test(value),
+  'debe ser una URL http(s) o una imagen PNG, JPG, WebP o SVG embebida',
+);
 export const AppearanceSchema = z
   .object({
     fill: Paint.optional(),
@@ -117,6 +121,10 @@ export const AppearanceSchema = z
     verticalAlign: z.enum(['top', 'middle', 'bottom']).optional(),
     /** Silueta portable del shape de mxGraph. */
     shape: z.enum(['rectangle', 'module', 'uml-frame', 'note']).optional(),
+    /** Figura del catálogo local, p.ej. `azure:function-app` o `uml:actor`. */
+    icon: z.string().max(120).optional(),
+    /** Imagen propia por URL o data URI; prevalece sobre `icon`. */
+    image: ImageSource.optional(),
     strokeWidth: z.number().positive().optional(),
     frameWidth: z.number().positive().optional(),
     frameHeight: z.number().positive().optional(),
@@ -126,6 +134,13 @@ export type Appearance = z.infer<typeof AppearanceSchema>;
 
 /** Geometría de una conexión importada. Las coordenadas son de lienzo absoluto. */
 export const PointSchema = z.object({ x: z.number(), y: z.number() }).strict();
+export const HeaderSchema = z.object({
+  name: z.string().min(1),
+  value: z.string().optional(),
+  required: z.boolean().default(true),
+  description: z.string().optional(),
+}).strict();
+export type Header = z.infer<typeof HeaderSchema>;
 export const EdgeLayoutSchema = z
   .object({
     sourcePoint: PointSchema.optional(),
@@ -216,6 +231,12 @@ export const StepSchema = z
     /** Ejemplos libres: pueden ser JSON incompleto durante el diseño. */
     request: z.string().optional(),
     response: z.string().optional(),
+    /** Headers que viajan en este paso; se muestran como contrato estructurado. */
+    headers: z.array(HeaderSchema).default([]),
+    /** Posición libre de la etiqueta del paso en coordenadas del canvas. */
+    labelPosition: PointSchema.optional(),
+    /** Recorrido editable de este paso, incluso cuando la arista se infiere del flujo. */
+    layout: EdgeLayoutSchema.optional(),
     note: z.string().optional(),
   })
   .strict();
