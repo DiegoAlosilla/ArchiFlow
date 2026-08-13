@@ -55,6 +55,7 @@ Agrupadores visuales: capa arquitectónica, clúster, red o dominio. Son lo que 
 | `topics` | string[] | `[]` | Solo tiene sentido en `kind: broker` |
 | `external` | boolean | `false` | Lo dibuja con trazo discontinuo |
 | `layout` | `{x, y}` | — | Posición fijada a mano, relativa a la zona |
+| `appearance` | objeto | — | Colores, silueta e imagen elegida en el editor |
 
 ### `layout`
 
@@ -67,6 +68,18 @@ Lo escribe el editor gráfico al arrastrar un nodo, y gana sobre el auto-layout:
 ```
 
 Es el único campo de presentación del formato. Borrarlo devuelve el nodo al layout automático (el inspector tiene un botón para hacerlo). En las zonas admite además `width` y `height`, y sus coordenadas son absolutas.
+
+### `appearance`
+
+```yaml
+appearance:
+  fill: '#ffffff'
+  stroke: '#334155'
+  icon: azure:function-app
+  # image: https://ejemplo.com/iphone.svg
+```
+
+`icon` referencia una figura del catálogo local (`azure:*` o `uml:*`). `image` permite una URL `http(s)` o una imagen PNG, JPG, WebP o SVG cargada desde el editor y embebida como `data:image/...`. La imagen propia prevalece sobre `icon`. La semántica sigue viviendo en `kind`: cambiar la figura no convierte, por ejemplo, un canal en un servicio.
 
 ### Valores de `kind`
 

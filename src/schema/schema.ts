@@ -101,6 +101,10 @@ export type LayoutOverride = z.infer<typeof LayoutSchema>;
  * colores, tipografía y alineación que el autor ya decidió.
  */
 const Paint = z.string().regex(/^(?:none|#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6})$/);
+const ImageSource = z.string().max(2_500_000).refine(
+  (value) => /^https?:\/\//i.test(value) || /^data:image\/(?:png|jpeg|webp|svg\+xml);base64,/i.test(value),
+  'debe ser una URL http(s) o una imagen PNG, JPG, WebP o SVG embebida',
+);
 export const AppearanceSchema = z
   .object({
     fill: Paint.optional(),
@@ -117,6 +121,10 @@ export const AppearanceSchema = z
     verticalAlign: z.enum(['top', 'middle', 'bottom']).optional(),
     /** Silueta portable del shape de mxGraph. */
     shape: z.enum(['rectangle', 'module', 'uml-frame', 'note']).optional(),
+    /** Figura del catálogo local, p.ej. `azure:function-app` o `uml:actor`. */
+    icon: z.string().max(120).optional(),
+    /** Imagen propia por URL o data URI; prevalece sobre `icon`. */
+    image: ImageSource.optional(),
     strokeWidth: z.number().positive().optional(),
     frameWidth: z.number().positive().optional(),
     frameHeight: z.number().positive().optional(),

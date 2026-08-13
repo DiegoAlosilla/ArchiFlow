@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react';
+import { NODE_KINDS, type NodeKind } from '@archiflow/schema';
 import { kindStyle } from './kinds';
 import type { ServiceNodeData, ZoneNodeData } from './layout';
-import { vendorIconPath } from '../../src/icons';
+import { explicitIconPath, vendorIconPath } from '../../src/icons';
 
 /**
  * Los nodos no leen el reloj de reproducción. El resaltado durante la
@@ -63,6 +64,13 @@ export function ZoneNode({ data, id, selected }: NodeProps) {
 export function ServiceNode({ data, id, selected }: NodeProps) {
   const { node, editing, onResizeEnd, onLabelChange } = data as ServiceNodeData;
   const style = kindStyle(node.kind);
+  const requestedIconKind = node.appearance?.icon?.startsWith('general:')
+    ? node.appearance.icon.slice('general:'.length)
+    : undefined;
+  const generalIconKind = requestedIconKind && NODE_KINDS.includes(requestedIconKind as NodeKind)
+    ? requestedIconKind as NodeKind
+    : node.kind;
+  const visualStyle = kindStyle(generalIconKind);
   const faithful = node.tags.includes('drawio:faithful');
   const renderKind = node.tags.find((tag) => tag.startsWith('drawio:render:'))?.slice('drawio:render:'.length);
   const presentationClass = renderKind ? ` node--${renderKind}` : '';
@@ -74,8 +82,9 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
   const subtitle = faithful ? '' : (node.tech ?? style.label);
   const endpoint = node.provides[0];
   const expanded = node.expanded && node.provides.length > 0;
-  const vendorIcon = vendorIconPath(node.tags, node.label, node.tech, node.platform);
   const appearance = node.appearance;
+  const vendorIcon = explicitIconPath(appearance?.icon, appearance?.image)
+    ?? vendorIconPath(node.tags, node.label, node.tech, node.platform);
   const shapeClass = appearance?.shape ? ` shape--${appearance.shape}` : '';
   const vertical = appearance?.verticalAlign === 'top' ? 'flex-start' : appearance?.verticalAlign === 'bottom' ? 'flex-end' : 'center';
 
@@ -126,7 +135,7 @@ export function ServiceNode({ data, id, selected }: NodeProps) {
             <img src={vendorIcon} alt="" />
           ) : (
             <svg viewBox="0 0 24 24" width="20" height="20">
-              {style.icon}
+              {visualStyle.icon}
             </svg>
           )}
         </span>

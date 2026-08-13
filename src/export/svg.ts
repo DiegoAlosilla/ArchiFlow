@@ -17,7 +17,7 @@ import {
 } from '../layout/index.js';
 import { buildDots, dotFade, dotProgress } from '../animation.js';
 import { kindAccent, protocolColor } from '../theme.js';
-import { vendorIconPath } from '../icons.js';
+import { explicitIconPath, vendorIconPath } from '../icons.js';
 
 /**
  * Exportación a SVG.
@@ -137,16 +137,21 @@ function renderNode(node: IrNode, box: Box, palette: Palette, dimmed: boolean, a
   const renderKind = node.tags.find((tag) => tag.startsWith('drawio:render:'))?.slice('drawio:render:'.length);
   const faithfulGlyph = renderKind === 'image' || renderKind === 'annotation' || renderKind === 'label';
   const hideLabel = node.tags.includes('drawio:hide-label');
-  const icon = vendorIconPath(node.tags, node.label, node.tech, node.platform);
+  const icon = explicitIconPath(node.appearance?.icon, node.appearance?.image)
+    ?? vendorIconPath(node.tags, node.label, node.tech, node.platform);
+  const iconHref = icon && (/^(?:https?:|data:)/i.test(icon)
+    ? icon
+    : assetBaseUrl
+      ? `${assetBaseUrl.replace(/\/$/, '')}${icon}`
+      : undefined);
 
   if (faithfulGlyph) {
     const iconSize = Math.max(8, Math.min(42, box.width, box.height));
     const iconX = box.x + (renderKind === 'annotation' ? 0 : (box.width - iconSize) / 2);
     const iconY = box.y + (box.height - iconSize) / 2;
     const parts: string[] = [];
-    if (icon && assetBaseUrl) {
-      const href = `${assetBaseUrl.replace(/\/$/, '')}${icon}`;
-      parts.push(`<image href="${escapeXml(href)}" x="${iconX}" y="${iconY}" width="${iconSize}" height="${iconSize}" preserveAspectRatio="xMidYMid meet" />`);
+    if (iconHref) {
+      parts.push(`<image href="${escapeXml(iconHref)}" x="${iconX}" y="${iconY}" width="${iconSize}" height="${iconSize}" preserveAspectRatio="xMidYMid meet" />`);
     } else if (renderKind !== 'label') {
       parts.push(`<text x="${iconX + iconSize / 2}" y="${iconY + iconSize / 2 + 4}" text-anchor="middle" font-family="${FONT}" font-size="${Math.min(12, iconSize)}" font-weight="600" fill="${accent}">${escapeXml(node.kind.charAt(0).toUpperCase())}</text>`);
     }
@@ -197,9 +202,8 @@ function renderNode(node: IrNode, box: Box, palette: Palette, dimmed: boolean, a
       .join(''),
   ];
 
-  if (icon && assetBaseUrl) {
-    const href = `${assetBaseUrl.replace(/\/$/, '')}${icon}`;
-    parts.splice(2, 0, `<image href="${escapeXml(href)}" x="${iconX + 5}" y="${iconY + 5}" width="${iconSize - 10}" height="${iconSize - 10}" preserveAspectRatio="xMidYMid meet" />`);
+  if (iconHref) {
+    parts.splice(2, 0, `<image href="${escapeXml(iconHref)}" x="${iconX + 5}" y="${iconY + 5}" width="${iconSize - 10}" height="${iconSize - 10}" preserveAspectRatio="xMidYMid meet" />`);
   } else {
     parts.splice(2, 0, `<text x="${iconX + iconSize / 2}" y="${iconY + iconSize / 2 + 5}" text-anchor="middle" font-family="${FONT}" font-size="14" font-weight="600" fill="${accent}">${escapeXml(node.kind.charAt(0).toUpperCase())}</text>`);
   }

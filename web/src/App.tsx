@@ -11,6 +11,9 @@ import { Timeline } from './Timeline';
 import { clock } from './playback';
 import type { Selection } from './selection';
 import { TrafficInspector } from './TrafficInspector';
+import { ArrangePanel } from './ArrangePanel';
+import type { FigureDefinition } from './figures';
+import { explicitIconPath } from '../../src/icons';
 
 /** Los valores de serie salen del esquema, para no tenerlos en dos sitios. */
 const DEFAULT_ANIMATION = AnimationSchema.parse({});
@@ -150,13 +153,51 @@ export default function App() {
     setFocusRequest({ selection: next, nonce: Date.now() });
   }, [ir]);
 
-  const addNode = (kind: NodeKind = 'service') => {
+  const addNode = (kind: NodeKind = 'service', figure?: FigureDefinition, image?: string) => {
     if (!ir) return;
     const id = freshId('nodo', new Set(ir.nodes.map((node) => node.id)));
+    const appearance = image
+      ? { image }
+      : figure && figure.group !== 'General'
+        ? { icon: figure.id }
+        : undefined;
     void mutate({
       op: 'node.add',
-      node: { id, label: 'Nodo nuevo', kind, ...(ir.zones[0] ? { zone: ir.zones[0].id } : {}) },
+      node: {
+        id,
+        label: figure?.label ?? (image ? 'Imagen personalizada' : 'Nodo nuevo'),
+        kind,
+        ...(appearance ? { appearance } : {}),
+        ...(ir.zones[0] ? { zone: ir.zones[0].id } : {}),
+      },
     }).then((ok) => ok && setSelection({ kind: 'node', id }));
+  };
+
+  const useFigure = (figure: FigureDefinition) => {
+    if (!ir || selection?.kind !== 'node') {
+      addNode(figure.kind, figure);
+      return;
+    }
+    const node = ir.nodes.find((candidate) => candidate.id === selection.id);
+    if (!node) return;
+    const { icon: _icon, image: _image, ...appearance } = node.appearance ?? {};
+    const nextAppearance = { ...appearance, icon: figure.id };
+    void mutate({
+      op: 'node.update',
+      id: node.id,
+      patch: { appearance: nextAppearance },
+    });
+  };
+
+  const useCustomImage = (image: string) => {
+    if (!ir || selection?.kind !== 'node') {
+      addNode('client', undefined, image);
+      return;
+    }
+    const node = ir.nodes.find((candidate) => candidate.id === selection.id);
+    if (!node) return;
+    const { icon: _icon, ...appearance } = node.appearance ?? {};
+    void mutate({ op: 'node.update', id: node.id, patch: { appearance: { ...appearance, image } } });
   };
 
   const addZone = () => {
@@ -349,7 +390,8 @@ export default function App() {
               selection={selection}
               onSelect={setSelection}
               mutate={mutate}
-              onAddNode={addNode}
+              onUseFigure={useFigure}
+              onUseCustomImage={useCustomImage}
               onIssueClick={focusIssue}
             />}
 
@@ -398,13 +440,20 @@ export default function App() {
                 onFollow={() => setSelection(null)}
               />
               <div className="inspector-tabs" role="tablist" aria-label="Propiedades">
-                {([['style', 'Estilo'], ['text', 'Texto'], ['arrange', 'Organizar']] as const).map(([id, label]) => (
-                  <button key={id} type="button" className={inspectorTab === id ? 'is-active' : ''} onClick={() => setInspectorTab(id)}>{label}</button>
+                {([['style', 'Estilo', 'Colores, bordes y figura'], ['text', 'Texto', 'Nombre, datos y contratos'], ['arrange', 'Organizar', 'Posición, zona, orden y rutas']] as const).map(([id, label, title]) => (
+                  <button key={id} type="button" title={title} className={inspectorTab === id ? 'is-active' : ''} onClick={() => setInspectorTab(id)}>{label}</button>
                 ))}
+              </div>
+              <div className="inspector-tab-help">
+                {inspectorTab === 'style' && 'Apariencia visual del elemento seleccionado.'}
+                {inspectorTab === 'text' && 'Contenido y propiedades semánticas del elemento.'}
+                {inspectorTab === 'arrange' && 'Ubicación, agrupación, orden y recorrido en el canvas.'}
               </div>
               {inspectorTab === 'style'
                 ? <StylePanel ir={ir} selection={selection} mutate={mutate} />
-                : <Inspector ir={ir} selection={selection} onSelect={setSelection} mutate={mutate} />}
+                : inspectorTab === 'arrange'
+                  ? <ArrangePanel ir={ir} selection={selection} mutate={mutate} />
+                  : <Inspector ir={ir} selection={selection} onSelect={setSelection} mutate={mutate} />}
             </aside>
           )}
         </div>
@@ -423,6 +472,7 @@ function StylePanel({ ir, selection, mutate }: { ir: Ir; selection: Selection; m
     return <div className="inspector inspector--empty"><p>Selecciona una figura o contenedor para cambiar su estilo.</p></div>;
   }
   const appearance = item.appearance ?? {};
+  const figurePath = selection.kind === 'node' ? explicitIconPath(appearance.icon, appearance.image) : undefined;
   const update = (patch: Record<string, unknown>) => {
     const mutation = selection.kind === 'node'
       ? { op: 'node.update', id: item.id, patch: { appearance: { ...appearance, ...patch } } }
@@ -431,6 +481,10 @@ function StylePanel({ ir, selection, mutate }: { ir: Ir; selection: Selection; m
   };
   return <div className="inspector style-panel">
     <header className="inspector__header"><span className="inspector__kind">Apariencia</span></header>
+    {selection.kind === 'node' && <div className="style-figure">
+      <span className="style-figure__preview">{figurePath ? <img src={figurePath} alt="" /> : 'AF'}</span>
+      <span><b>{appearance.image ? 'Imagen propia' : appearance.icon ? appearance.icon.replace(':', ' · ') : 'Figura general'}</b><small>Elige otra desde la biblioteca izquierda.</small></span>
+    </div>}
     <label className="style-row"><span>Relleno</span><input type="color" value={appearance.fill && appearance.fill !== 'none' ? appearance.fill : '#ffffff'} onChange={(event) => update({ fill: event.target.value })} /></label>
     <label className="style-row"><span>Línea</span><input type="color" value={appearance.stroke && appearance.stroke !== 'none' ? appearance.stroke : '#36393d'} onChange={(event) => update({ stroke: event.target.value })} /></label>
     <label className="style-row"><span>Texto</span><input type="color" value={appearance.text && appearance.text !== 'none' ? appearance.text : '#1f2937'} onChange={(event) => update({ text: event.target.value })} /></label>

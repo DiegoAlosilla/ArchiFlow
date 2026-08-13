@@ -188,8 +188,9 @@ export async function serve({ root, port, open }: ServeOptions): Promise<void> {
       let body = '';
       req.on('data', (chunk) => {
         body += chunk;
-        // Un diagrama no ocupa megas; cortar aquí evita agotar memoria.
-        if (body.length > 2_000_000) reject(new Error('cuerpo demasiado grande'));
+        // Las imágenes propias se embeben como base64. El límite sigue siendo
+        // acotado, pero deja margen a un archivo de ~1.8 MB más el YAML.
+        if (body.length > 4_000_000) reject(new Error('cuerpo demasiado grande'));
       });
       req.on('end', () => resolve(body));
       req.on('error', reject);

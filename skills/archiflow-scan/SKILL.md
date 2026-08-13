@@ -17,6 +17,22 @@ Y hay un límite que **debes comunicar siempre al usuario**: el análisis estát
 
 ## Procedimiento
 
+### 0. Sincronizar el repositorio antes de leerlo
+
+Nunca escanees una copia local sin comprobar primero el remoto. Si la ruta pertenece a Git:
+
+```bash
+git -C <ruta-del-repo> remote get-url origin
+git -C <ruta-del-repo> fetch --prune origin
+git -C <ruta-del-repo> status --short --branch
+git -C <ruta-del-repo> rev-list --left-right --count HEAD...@{upstream}
+```
+
+- Si el árbol está limpio y la rama remota tiene cambios, ejecuta `git -C <ruta-del-repo> pull --ff-only` antes del scan.
+- Si está limpio y actualizado, registra igualmente el commit (`git rev-parse HEAD`) en las evidencias de la entrega.
+- Si hay cambios locales y el remoto avanzó, **no hagas stash, reset, merge ni sobrescribas nada**. Detén el scan y pide al usuario resolver o autorizar cómo integrar los cambios. Un diagrama generado sobre código desactualizado no es aceptable.
+- Si no existe remoto o upstream, dilo explícitamente; no simules que se validó contra el remoto.
+
 ### 1. Recolectar evidencias
 
 ```bash
@@ -59,6 +75,8 @@ Salida:
 | `datastores` con `kind: redis` | `kind: cache` |
 | `messaging` con broker | Un nodo `kind: broker` (uno solo para todo Kafka, no uno por topic) |
 | `endpoints` | No son nodos independientes: van en `provides` del propio servicio, pero cada uno debe tener `id` estable y ser direccionable como `servicio/operacion` |
+
+Cuando la evidencia identifica una tecnología del catálogo (por ejemplo Azure Functions, AKS, API Management, Cosmos DB, Service Bus o Azure SQL), usa `appearance.icon` con la figura Azure correspondiente. Para actores, componentes, interfaces o casos de uso puede usar `uml:*`. El `kind` conserva el significado arquitectónico; la figura solo cambia la presentación.
 
 Si un servicio participa en un flujo por una operación concreta, añádele `expanded: true` aunque solo se esté mostrando un endpoint. Sus operaciones se dibujan como tarjetas horizontales dentro de la caja y las flechas se anclan a esas tarjetas. No basta con que el texto del endpoint aparezca como subtítulo. En una vista de flujo incluye solo las operaciones que participan en los escenarios mostrados; el inventario completo puede vivir en otra vista para no convertir el servicio en una banda inmanejable.
 

@@ -42,6 +42,21 @@ describe('parseDiagram', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('acepta figuras de catálogo e imágenes propias seguras', () => {
+    const catalog = parseDiagram(minimal.replace('  - id: a', "  - id: a\n    appearance: { icon: 'azure:function-app' }"));
+    expect(catalog.ok).toBe(true);
+    expect(catalog.diagram?.nodes[0]?.appearance?.icon).toBe('azure:function-app');
+
+    const custom = parseDiagram(minimal.replace('  - id: a', "  - id: a\n    appearance: { image: 'https://example.com/iphone.svg' }"));
+    expect(custom.ok).toBe(true);
+    expect(custom.diagram?.nodes[0]?.appearance?.image).toContain('iphone.svg');
+  });
+
+  it('rechaza esquemas peligrosos como imagen propia', () => {
+    const parsed = parseDiagram(minimal.replace('  - id: a', "  - id: a\n    appearance: { image: 'javascript:alert(1)' }"));
+    expect(parsed.ok).toBe(false);
+  });
+
   it('avisa de un nodo que no participa en ningún flujo', () => {
     const result = parseDiagram(`${minimal}\n  - id: huerfano\n`.replace('flows:', 'flows:'));
     const orphanWarning = parseDiagram(
