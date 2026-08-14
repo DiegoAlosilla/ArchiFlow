@@ -141,6 +141,13 @@ export const HeaderSchema = z.object({
   description: z.string().optional(),
 }).strict();
 export type Header = z.infer<typeof HeaderSchema>;
+export const HttpParameterSchema = z.object({
+  name: z.string().min(1),
+  value: z.string().optional(),
+  required: z.boolean().default(true),
+  description: z.string().optional(),
+}).strict();
+export type HttpParameter = z.infer<typeof HttpParameterSchema>;
 export const EdgeLayoutSchema = z
   .object({
     sourcePoint: PointSchema.optional(),
@@ -231,8 +238,14 @@ export const StepSchema = z
     /** Ejemplos libres: pueden ser JSON incompleto durante el diseño. */
     request: z.string().optional(),
     response: z.string().optional(),
+    /** Parámetros de URL separados del body para no falsear el contrato HTTP. */
+    pathParams: z.array(HttpParameterSchema).default([]),
+    queryParams: z.array(HttpParameterSchema).default([]),
     /** Headers que viajan en este paso; se muestran como contrato estructurado. */
     headers: z.array(HeaderSchema).default([]),
+    /** Motivo arquitectónico del salto y subconjunto de datos que consume el llamador. */
+    purpose: z.string().optional(),
+    dataUsed: z.array(z.string().min(1)).default([]),
     /** Posición libre de la etiqueta del paso en coordenadas del canvas. */
     labelPosition: PointSchema.optional(),
     /** Recorrido editable de este paso, incluso cuando la arista se infiere del flujo. */

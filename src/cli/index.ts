@@ -5,6 +5,7 @@ import { cac } from 'cac';
 import pc from 'picocolors';
 import { compile } from '../schema/compile.js';
 import { parseDiagram, type Issue } from '../schema/parse.js';
+import { validateScanContract } from '../schema/scan-contract.js';
 import { scanRepository } from '../analyzer/index.js';
 import { toDrawio } from '../export/drawio.js';
 import { toJson } from '../export/json.js';
@@ -62,6 +63,22 @@ cli
       `${diagrams.length} diagrama(s) · ${errors > 0 ? pc.red(`${errors} error(es)`) : pc.green('sin errores')} · ${pc.yellow(`${warnings} aviso(s)`)}`,
     );
     if (errors > 0) process.exitCode = 1;
+  });
+
+cli
+  .command('validate-scan <file>', 'Audita el contrato estricto de un diagrama generado desde código')
+  .action(async (file: string) => {
+    const input = path.resolve(process.cwd(), file);
+    const source = await readFile(input, 'utf8');
+    const parsed = parseDiagram(source);
+    const issues = parsed.ok && parsed.diagram ? validateScanContract(parsed.diagram) : parsed.issues;
+    printIssues(file, issues);
+    if (issues.some((issue) => issue.level === 'error')) {
+      console.log(pc.red(`× ${issues.filter((issue) => issue.level === 'error').length} incumplimiento(s) del contrato de scan`));
+      process.exitCode = 1;
+      return;
+    }
+    console.log(pc.green(`✓ ${file} cumple el contrato estricto de scan`));
   });
 
 cli

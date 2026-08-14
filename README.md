@@ -33,6 +33,7 @@ El lienzo siempre es editable: al seleccionar un objeto aparece el inspector. Pu
 - Añadir y borrar nodos, zonas y flujos.
 - Arrastrar de un conector a otro para **añadir un paso** al flujo activo. No se dibujan aristas: las aristas se infieren de los pasos, así que ofrecer un gesto de "dibujar flecha" mentiría sobre el modelo.
 - Reordenar y editar los pasos de un flujo.
+- Importar uno o varios `.arch.yaml` desde **Importar** y abrir la vista virtual **Todos los flujos**. Los componentes con el mismo `id` se consolidan y los archivos originales permanecen separados y editables.
 - Importar `.drawio` o `.xml` desde **Importar**, conservando geometría, colores, anclas y puntos intermedios.
 - Activar **Animar ruta** y seleccionar cuadros consecutivos para construir el recorrido sin arrastrar conectores.
 - Cambiar entre tema claro y oscuro sin alterar los colores propios del diagrama.
@@ -124,16 +125,9 @@ npm install
 npm run skills:install
 ```
 
-El comando instala o actualiza las skills en `~/.claude/skills/` y reemplaza
-solo las carpetas `archiflow-*`. Reinicia Claude Code y estarán disponibles,
-por ejemplo, como `/archiflow-design` o `/archiflow-import`.
-
-Para Codex, copia las carpetas de `skills/` a la carpeta local de skills y
-reinicia la aplicación:
-
-```powershell
-Copy-Item -Recurse -Force .\skills\archiflow-* "$env:USERPROFILE\.codex\skills\"
-```
+El comando instala o actualiza la misma versión en `~/.claude/skills/` y
+`~/.codex/skills/`, reemplazando solo las carpetas de ArchiFlow. Reinicia el
+agente que uses para cargar la versión nueva.
 
 En ambos casos, vuelve a ejecutar la instalación tras actualizar el repositorio
 para recibir cambios en las instrucciones de las skills. La instalación es
@@ -158,7 +152,7 @@ La web animada es el entregable. Los exports existen para compartir con quien no
 | **draw.io** (`.drawio`) | Una página con la topología y **una por flujo, con los pasos numerados**. Traducción honesta de una animación a un formato estático: se pierde el movimiento, se conserva el orden. |
 | **SVG** | Vectorial y autocontenido. Se abre en cualquier sitio, se incrusta en un correo y draw.io también lo importa. |
 | **PNG / JPG** | Rasterizados del SVG a 1×, 2× o 3×, con tema claro u oscuro y fondo opcionalmente transparente. |
-| **GIF animado** | Una vuelta completa del flujo activo, en bucle. Es lo que se pega en un Confluence o en un Teams, donde acaba viviendo la documentación. |
+| **GIF animado** | Una vuelta completa del flujo activo con el inspector del paso: params, headers, request/response, propósito y datos utilizados. |
 | **PDF** | Una página con el diagrama, para imprimir o adjuntar. |
 | **Mermaid** (`.md`) | Topología como `flowchart` y cada flujo como `sequenceDiagram`. Para pegar en un PR — GitHub lo renderiza — y porque un LLM lo entiende sin contexto. |
 | **JSON** | El modelo compilado, con las aristas ya inferidas y la línea de tiempo calculada, para alimentar otra herramienta. |

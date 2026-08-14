@@ -11,7 +11,9 @@ interface Props {
   ir: Ir | null;
   diagrams: DiagramEntry[];
   selectedDiagram: DiagramEntry | null;
+  aggregateSelected: boolean;
   onSelectDiagram: (id: string) => void;
+  onSelectAggregate: () => void;
   flows: IrFlow[];
   selectedFlow: IrFlow | null;
   onSelectFlow: (id: string) => void;
@@ -37,7 +39,9 @@ export function Sidebar({
   ir,
   diagrams,
   selectedDiagram,
+  aggregateSelected,
   onSelectDiagram,
+  onSelectAggregate,
   flows,
   selectedFlow,
   onSelectFlow,
@@ -113,7 +117,7 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
-      <section className="panel shape-library">
+      {editing && <section className="panel shape-library">
         <input className="shape-library__search" aria-label="Buscar figuras" placeholder="Buscar Azure, UML…" value={figureSearch} onChange={(event) => setFigureSearch(event.target.value)} />
         {selectedNode && <div className="shape-library__target"><b>Aplicar a</b><span>{selectedNode.label}</span></div>}
         {groups.map((group) => {
@@ -143,12 +147,22 @@ export function Sidebar({
           <label className="shape-custom__upload">Cargar PNG, JPG, WebP o SVG<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => useFile(event.target.files?.[0])} /></label>
           {imageError && <span className="shape-custom__error">{imageError}</span>}
         </div>
-      </section>
+      </section>}
 
       {diagrams.length > 1 && (
         <section className="panel">
           <h2 className="panel__title">Diagramas</h2>
           <ul className="list">
+            <li>
+              <button
+                type="button"
+                className={`list__item${aggregateSelected ? ' is-selected' : ''}`}
+                onClick={onSelectAggregate}
+              >
+                <span className="list__label">Todos los flujos</span>
+                <span className="list__meta">{diagrams.filter((diagram) => diagram.ok).length} YAML consolidados · solo lectura</span>
+              </button>
+            </li>
             {diagrams.map((diagram) => (
               <li key={diagram.id}>
                 <button

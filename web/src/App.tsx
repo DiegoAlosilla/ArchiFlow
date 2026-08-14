@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimationSchema, type AnimationSettings, type Ir, type IrFlow, type Issue, type NodeKind } from '@archiflow/schema';
+import { AnimationSchema, focusIrOnFlow, mergeIrs, type AnimationSettings, type Ir, type IrFlow, type Issue, type NodeKind } from '@archiflow/schema';
 import type { ImportResponse, Mutation } from '@archiflow/shared';
 import { useDiagrams } from './useDiagrams';
 import { useMutations } from './useMutations';
@@ -17,6 +17,7 @@ import { explicitIconPath } from '../../src/icons';
 
 /** Los valores de serie salen del esquema, para no tenerlos en dos sitios. */
 const DEFAULT_ANIMATION = AnimationSchema.parse({});
+const ALL_DIAGRAMS_ID = '__all__';
 
 export default function App() {
   const { payload, connection } = useDiagrams();
@@ -36,14 +37,11 @@ export default function App() {
   const [focusRequest, setFocusRequest] = useState<{ selection: Selection; nonce: number } | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
 
-  /**
-   * No hay modo "ver" y modo "editar": el lienzo siempre es editable y el
-   * inspector aparece al seleccionar algo. Un conmutador obligaba a recordar
-   * en qué modo estabas antes de poder tocar nada.
-   */
-  const editing = !presenting;
-
   const diagrams = payload?.diagrams ?? [];
+  const validDiagrams = useMemo(() => diagrams.filter((diagram) => diagram.ok && diagram.ir), [diagrams]);
+  const aggregateMode = diagramId === ALL_DIAGRAMS_ID && validDiagrams.length > 1;
+  /** La vista consolidada es virtual: nunca escribe ambiguamente en varios YAML. */
+  const editing = !presenting && !aggregateMode;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -52,15 +50,16 @@ export default function App() {
   // Mantener la selección entre recargas: si el fichero que estabas viendo
   // sigue ahí tras un guardado, no debe saltar a otro.
   const selectedDiagram = useMemo(() => {
+    if (aggregateMode) return null;
     if (diagrams.length === 0) return null;
     return (
       diagrams.find((entry) => entry.id === diagramId) ?? diagrams.find((entry) => entry.ok) ?? diagrams[0]!
     );
-  }, [diagrams, diagramId]);
+  }, [aggregateMode, diagrams, diagramId]);
 
   useEffect(() => {
-    if (selectedDiagram && selectedDiagram.id !== diagramId) setDiagramId(selectedDiagram.id);
-  }, [selectedDiagram, diagramId]);
+    if (!aggregateMode && selectedDiagram && selectedDiagram.id !== diagramId) setDiagramId(selectedDiagram.id);
+  }, [aggregateMode, selectedDiagram, diagramId]);
 
   useEffect(() => {
     if (!pendingImportedFile) return;
@@ -76,20 +75,30 @@ export default function App() {
   // inicializar su historial. Editar no debe dejar la aplicación en blanco.
   const history = selectedDiagram ? payload?.history?.[selectedDiagram.id] : undefined;
 
-  const ir: Ir | null = selectedDiagram?.ir ?? null;
+  const aggregateIr = useMemo(
+    () => validDiagrams.length > 1
+      ? mergeIrs(validDiagrams.map((diagram) => ({ id: diagram.id, name: diagram.name, ir: diagram.ir! })))
+      : null,
+    [validDiagrams],
+  );
+  const ir: Ir | null = aggregateMode ? aggregateIr : selectedDiagram?.ir ?? null;
   const flows = ir?.flows ?? [];
 
   const selectedFlow: IrFlow | null = useMemo(() => {
     if (flows.length === 0) return null;
     return flows.find((flow) => flow.id === flowId) ?? flows[0]!;
   }, [flows, flowId]);
+  const renderedIr = useMemo(
+    () => aggregateMode && ir && selectedFlow ? focusIrOnFlow(ir, selectedFlow.id) : ir,
+    [aggregateMode, ir, selectedFlow],
+  );
 
   useEffect(() => {
     if (selectedFlow && selectedFlow.id !== flowId) setFlowId(selectedFlow.id);
   }, [selectedFlow, flowId]);
 
-  const playbackFlowKey = selectedFlow && selectedDiagram
-    ? `${selectedDiagram.id}:${selectedFlow.id}`
+  const playbackFlowKey = selectedFlow && (selectedDiagram || aggregateMode)
+    ? `${aggregateMode ? ALL_DIAGRAMS_ID : selectedDiagram!.id}:${selectedFlow.id}`
     : null;
   const previousPlaybackFlow = useRef<string | null>(null);
 
@@ -225,17 +234,33 @@ export default function App() {
     });
   };
 
-  const importFile = async (file: File) => {
+  const importFiles = async (files: File[]) => {
     setImportStatus(null);
     try {
-      const response = await fetch('/api/import', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: file.name, source: await file.text() }),
-      });
-      const result = (await response.json()) as ImportResponse;
-      setImportStatus(result);
-      if (result.ok && result.file) setPendingImportedFile(result.file);
+      const results: ImportResponse[] = [];
+      for (const file of files) {
+        const response = await fetch('/api/import', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: file.name, source: await file.text() }),
+        });
+        results.push((await response.json()) as ImportResponse);
+      }
+      const failed = results.find((result) => !result.ok);
+      if (failed) setImportStatus({ ok: false, error: `${results.filter((result) => result.ok).length} importado(s); ${failed.error}` });
+      else {
+        const totals = results.reduce((summary, result) => ({
+          pages: summary.pages + (result.summary?.pages ?? 0),
+          shapes: summary.shapes + (result.summary?.shapes ?? result.summary?.nodes ?? 0),
+          containers: summary.containers + (result.summary?.containers ?? 0),
+          links: summary.links + (result.summary?.links ?? 0),
+          flows: summary.flows + (result.summary?.flows ?? 0),
+          nodes: summary.nodes + (result.summary?.nodes ?? 0),
+        }), { pages: 0, shapes: 0, containers: 0, links: 0, flows: 0, nodes: 0 });
+        setImportStatus({ ok: true, imported: results.length, summary: totals });
+        if (files.length > 1) setDiagramId(ALL_DIAGRAMS_ID);
+        else if (results[0]?.file) setPendingImportedFile(results[0].file);
+      }
     } catch (cause) {
       setImportStatus({ ok: false, error: (cause as Error).message });
     }
@@ -266,7 +291,7 @@ export default function App() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') { event.preventDefault(); void redo(); }
       if (event.key === 'Escape' && presenting) setPresenting(false);
       if (event.key === 'Escape' && pathMode) { setPathMode(false); setPathStart(null); }
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selection) {
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selection && editing) {
         event.preventDefault();
         if (selection.kind === 'node') void mutate({ op: 'node.remove', id: selection.id }).then((ok) => ok && setSelection(null));
         if (selection.kind === 'zone') void mutate({ op: 'zone.remove', id: selection.id }).then((ok) => ok && setSelection(null));
@@ -274,7 +299,7 @@ export default function App() {
       }
     };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
-  }, [mutate, pathMode, presenting, redo, selection, undo]);
+  }, [editing, mutate, pathMode, presenting, redo, selection, undo]);
 
   return (
     <div className={`app${presenting ? ' app--presenting' : ''}`}>
@@ -306,15 +331,15 @@ export default function App() {
           {presenting ? (
             <button type="button" className="tool tool--primary" onClick={() => setPresenting(false)}>Salir de presentación</button>
           ) : <>
-            <button type="button" className="tool tool--icon" onClick={() => void undo()} disabled={!history?.canUndo} aria-label="Deshacer">↶</button>
-            <button type="button" className="tool tool--icon" onClick={() => void redo()} disabled={!history?.canRedo} aria-label="Rehacer">↷</button>
+            <button type="button" className="tool tool--icon" onClick={() => void undo()} disabled={!editing || !history?.canUndo} aria-label="Deshacer">↶</button>
+            <button type="button" className="tool tool--icon" onClick={() => void redo()} disabled={!editing || !history?.canRedo} aria-label="Rehacer">↷</button>
             <span className="toolbar__divider" />
-            <button type="button" className="tool" onClick={() => addNode()}>Nodo</button>
-            <button type="button" className="tool" onClick={addZone}>Contenedor</button>
+            <button type="button" className="tool" disabled={!editing} onClick={() => addNode()}>Nodo</button>
+            <button type="button" className="tool" disabled={!editing} onClick={addZone}>Contenedor</button>
             <button
               type="button"
               className="tool"
-              disabled={!selection || selection.kind === 'flow' || selection.kind === 'step'}
+              disabled={!editing || !selection || selection.kind === 'flow' || selection.kind === 'step'}
               onClick={() => selection && setFocusRequest({ selection, nonce: Date.now() })}
             >
               Ajustar selección
@@ -322,6 +347,7 @@ export default function App() {
             <button
               type="button"
               className={`tool${pathMode ? ' tool--active' : ''}`}
+              disabled={!editing}
               onClick={togglePathMode}
               title="Selecciona nodos en el orden del recorrido"
             >
@@ -333,16 +359,17 @@ export default function App() {
               ref={importInput}
               className="visually-hidden"
               type="file"
-              accept=".drawio,.xml,text/xml,application/xml"
+              multiple
+              accept=".arch.yaml,.arch.yml,.yaml,.yml,.drawio,.xml,text/yaml,application/yaml,text/xml,application/xml"
               onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void importFile(file);
+                const files = [...(event.target.files ?? [])];
+                if (files.length > 0) void importFiles(files);
                 event.currentTarget.value = '';
               }}
             />
-            <ExportMenu ir={ir} flowId={selectedFlow?.id} fileName={selectedDiagram?.file ?? 'diagrama'} />
+            <ExportMenu ir={renderedIr ?? ir} flowId={selectedFlow?.id} fileName={aggregateMode ? 'todos-los-flujos.arch.yaml' : selectedDiagram?.file ?? 'diagrama'} />
             <button type="button" className="tool" onClick={() => setPresenting(true)}>Presentar</button>
-            {selectedDiagram && <span className="toolbar__file">{selectedDiagram.file}</span>}
+            <span className="toolbar__file">{aggregateMode ? `${validDiagrams.length} YAML consolidados` : selectedDiagram?.file}</span>
           </>}
         </div>}
       </header>
@@ -360,7 +387,9 @@ export default function App() {
         <div className={`banner ${importStatus.ok ? 'banner--success' : 'banner--error'}`} role="status">
           <span>
             {importStatus.ok && importStatus.summary
-              ? `Importado: ${importStatus.summary.shapes} figuras, ${importStatus.summary.links} conectores y ${importStatus.summary.pages} página(s).`
+              ? importStatus.summary.flows
+                ? `Importados ${importStatus.imported ?? 1} YAML: ${importStatus.summary.flows} flujos y ${importStatus.summary.nodes} componentes.`
+                : `Importado: ${importStatus.summary.shapes} figuras, ${importStatus.summary.links} conectores y ${importStatus.summary.pages} página(s).`
               : importStatus.error}
           </span>
           <button type="button" onClick={() => setImportStatus(null)} aria-label="Cerrar">×</button>
@@ -381,7 +410,9 @@ export default function App() {
               ir={ir}
               diagrams={diagrams}
               selectedDiagram={selectedDiagram}
+              aggregateSelected={aggregateMode}
               onSelectDiagram={setDiagramId}
+              onSelectAggregate={() => setDiagramId(ALL_DIAGRAMS_ID)}
               flows={flows}
               selectedFlow={selectedFlow}
               onSelectFlow={setFlowId}
@@ -396,9 +427,9 @@ export default function App() {
             />}
 
           <main className="main">
-            {ir ? (
+            {renderedIr ? (
               <Canvas
-                ir={ir}
+                ir={renderedIr}
                 flow={selectedFlow}
                 editing={editing}
                 selection={selection}
@@ -425,22 +456,22 @@ export default function App() {
             )}
             {!presenting && <>
               <div className="pagebar">
-                <button type="button" className="pagebar__tab is-active">Página-1</button>
+                <button type="button" className="pagebar__tab is-active">{aggregateMode ? 'Todos los YAML' : 'Página-1'}</button>
                 <button type="button" className="pagebar__add" aria-label="Añadir página">+</button>
-                {ir && <span className="pagebar__meta">{ir.nodes.length + ir.zones.length} elementos · {ir.edges.length} conectores · {flows.length} flujos</span>}
+                {renderedIr && <span className="pagebar__meta">{renderedIr.nodes.length + renderedIr.zones.length} elementos · {renderedIr.edges.length} conectores · {flows.length} flujos</span>}
               </div>
               <Timeline flow={selectedFlow} animation={settings} onAnimationChange={setAnimation} />
             </>}
           </main>
 
-          {editing && ir && (
+          {!presenting && ir && (
             <aside className="inspector-panel">
               <TrafficInspector
                 step={trafficStep}
                 pinned={Boolean(pinnedTrafficStep)}
                 onFollow={() => setSelection(null)}
               />
-              <div className="inspector-tabs" role="tablist" aria-label="Propiedades">
+              {editing && <><div className="inspector-tabs" role="tablist" aria-label="Propiedades">
                 {([['style', 'Estilo', 'Colores, bordes y figura'], ['text', 'Texto', 'Nombre, datos y contratos'], ['arrange', 'Organizar', 'Posición, zona, orden y rutas']] as const).map(([id, label, title]) => (
                   <button key={id} type="button" title={title} className={inspectorTab === id ? 'is-active' : ''} onClick={() => setInspectorTab(id)}>{label}</button>
                 ))}
@@ -454,7 +485,7 @@ export default function App() {
                 ? <StylePanel ir={ir} selection={selection} mutate={mutate} />
                 : inspectorTab === 'arrange'
                   ? <ArrangePanel ir={ir} selection={selection} mutate={mutate} />
-                  : <Inspector ir={ir} selection={selection} onSelect={setSelection} mutate={mutate} />}
+                  : <Inspector ir={ir} selection={selection} onSelect={setSelection} mutate={mutate} />}</>}
             </aside>
           )}
         </div>

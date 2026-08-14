@@ -1420,6 +1420,11 @@ button {
 .traffic__section:last-child { border-bottom: 0; }
 .traffic__section h3 { display: flex; align-items: center; gap: 5px; margin: 0 0 6px; color: var(--text); font-size: 10px; }
 .traffic__section h3 span { padding: 1px 5px; border-radius: 10px; background: var(--bg-raised); color: var(--text-dim); font-size: 8px; }
+.traffic__purpose p { margin: 0 0 7px; color: var(--text); font-size: 9.5px; line-height: 1.45; }
+.traffic__purpose h4 { margin: 0 0 5px; color: var(--text-dim); font-size: 8px; text-transform: uppercase; }
+.traffic__purpose ul { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.traffic__purpose li { padding: 2px 5px; border-radius: 4px; background: var(--bg-raised); }
+.traffic__purpose code { color: #22c55e; font-size: 8.5px; }
 .traffic__headers { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
 .traffic__headers li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 5px; min-width: 0; }
 .traffic__headers code { color: #fbbf24; font-size: 9px; }

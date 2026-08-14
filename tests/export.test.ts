@@ -104,6 +104,36 @@ describe('toSvg', () => {
     expect(svg).toContain('1. GET /v1/cuentas');
   });
 
+  it('incluye el contrato y la explicación del paso en fotogramas para GIF', async () => {
+    const detailed = compile(parseDiagram(`archiflow: 1
+name: Inspector exportable
+nodes:
+  - id: canal
+  - id: api
+flows:
+  - id: consulta
+    steps:
+      - from: canal
+        to: api
+        op: GET /clientes/{customerId}
+        pathParams:
+          - { name: customerId, value: '123' }
+        queryParams:
+          - { name: includeInactive, value: 'false', required: false }
+        headers:
+          - { name: X-Correlation-Id, required: true }
+        request: Sin body
+        purpose: Recuperar el perfil cacheado para validar elegibilidad
+        dataUsed: [customerId, sex]
+`).diagram!);
+    const svg = await toSvg(detailed, { flowId: 'consulta', timeMs: 100, includeTrafficPanel: true });
+    expect(svg).toContain('¿POR QUÉ OCURRE?');
+    expect(svg).toContain('PATH PARAMS');
+    expect(svg).toContain('QUERY PARAMS');
+    expect(svg).toContain('X-Correlation-Id');
+    expect(svg).toContain('sex');
+  });
+
   it('mantiene los waypoints y puntas importados, sin volver a enrutar', async () => {
     const faithful = compile(
       parseDiagram(

@@ -194,7 +194,7 @@ export function ExportMenu({ ir, flowId, fileName }: Props) {
     // comprimía un recorrido largo. El tiempo total se conserva aunque se
     // reduzcan los frames: así el GIF no corre más que la animación del lienzo.
     const playbackMs = loopMs / gifSpeed;
-    const probe = await renderSvg({ flowId, light, timeMs: 0 });
+    const probe = await renderSvg({ flowId, light, timeMs: 0, includeTrafficPanel: true });
     const { width, height } = svgSize(probe);
     const gifScale = Math.min(1, GIF_MAX_SIDE / Math.max(width, height));
 
@@ -202,7 +202,7 @@ export function ExportMenu({ ir, flowId, fileName }: Props) {
     let size = { width: 0, height: 0 };
     for (let i = 0; i < frameCount; i++) {
       setProgress(Math.round(((i + 1) / (frameCount + 1)) * 100));
-      const svg = await renderSvg({ flowId, light, timeMs: (i / frameCount) * loopMs });
+      const svg = await renderSvg({ flowId, light, timeMs: (i / frameCount) * loopMs, includeTrafficPanel: true });
       const canvas = await draw(svg, gifScale, light ? '#ffffff' : '#060910');
       const context = canvas.getContext('2d', { willReadFrequently: true })!;
       frames.push({ data: context.getImageData(0, 0, canvas.width, canvas.height).data });
@@ -399,8 +399,7 @@ export function ExportMenu({ ir, flowId, fileName }: Props) {
                 >
                   <strong>{busy === 'gif' ? `GIF animado · ${progress} %` : 'GIF animado'}</strong>
                   <span>
-                    Una vuelta completa del flujo activo, en bucle. Es lo que se pega en un Confluence
-                    o en un Teams.
+                    Una vuelta completa con request, response, params, headers y explicación del salto.
                   </span>
                 </button>
               </>

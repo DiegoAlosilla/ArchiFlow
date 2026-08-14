@@ -2,6 +2,8 @@
 
 Usar esta plantilla en todo scan de código. No resumirla como una sola flecha.
 
+Abrir también [complete-endpoint-example.arch.yaml](complete-endpoint-example.arch.yaml) y usarlo como patrón canónico completo. La plantilla explica; el YAML demuestra la forma exacta esperada.
+
 ## Algoritmo obligatorio
 
 1. Elegir un endpoint.
@@ -64,8 +66,12 @@ flows:
         to: servicio/<operation-id>
         op: <METHOD path>
         protocol: https
+        pathParams:
+          - { name: <path-param>, value: <ejemplo>, required: true }
+        queryParams:
+          - { name: <query-param>, value: <ejemplo>, required: false }
         request: |
-          <path/query params y request body; "Sin body" cuando corresponda>
+          <solo request body; "Sin body" cuando corresponda>
         headers:
           - name: <header-obligatorio>
             required: true
@@ -76,6 +82,7 @@ flows:
         op: GET <mapa/keyspace> · <patrón-de-clave>
         protocol: redis
         request: '<clave exacta o patrón probado>'
+        purpose: <por qué el endpoint necesita consultar esta caché>
 
       - from: cache
         to: servicio/<operation-id>
@@ -99,6 +106,8 @@ flows:
         protocol: https
         response: |
           <response body consumido>
+        dataUsed:
+          - <campo realmente leído por el llamador>
 
       - from: servicio/<operation-id>
         to: cache
@@ -129,17 +138,21 @@ steps:
     to: servicio/<operation-id>
     op: <METHOD path>
     request: <request completo>
+    pathParams: <path params estructurados>
+    queryParams: <query params estructurados>
     headers: <headers obligatorios>
   - from: servicio/<operation-id>
     to: cache
     op: GET <clave>
     protocol: redis
     request: <clave>
+    purpose: <por qué se consulta la caché>
   - from: cache
     to: servicio/<operation-id>
     op: Cache hit
     protocol: redis
     response: <valor recuperado>
+    dataUsed: [<campos realmente utilizados>]
   - from: servicio/<operation-id>
     to: canal
     op: <status DTO final>

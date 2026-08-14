@@ -1,0 +1,220 @@
+archiflow: 1
+name: GET /eligibility/{customerId} · ejemplo canónico completo
+description: Referencia obligatoria para scans con caché y API síncrona; contiene ida, retorno, params, headers, propósito y datos utilizados.
+layoutMode: auto
+
+zones:
+  - id: canales
+    label: Canales
+  - id: experiencia
+    label: Experiencia
+  - id: negocio
+    label: Negocio
+  - id: datos
+    label: Datos
+
+nodes:
+  - id: canal-web
+    label: Web de ofertas
+    kind: client
+    zone: canales
+
+  - id: eligibility-bff
+    label: eligibility-bff
+    kind: service
+    zone: experiencia
+    tech: Quarkus 3
+    expanded: true
+    provides:
+      - id: consultar-elegibilidad
+        method: GET
+        path: /eligibility/{customerId}
+
+  - id: customer-api
+    label: customer-api
+    kind: service
+    zone: negocio
+    expanded: true
+    provides:
+      - id: obtener-perfil
+        method: GET
+        path: /customers/{customerId}/profile
+
+  - id: eligibility-cache
+    label: Elegibilidad por cliente
+    kind: cache
+    zone: datos
+    tech: Redis · map eligibility-by-customer · TTL 10 min
+
+flows:
+  - id: consultar-elegibilidad-cache-miss
+    label: GET /eligibility/{customerId} · cache miss
+    entry: canal-web
+    trigger: El cliente abre una oferta y no existe elegibilidad cacheada
+    steps:
+      - from: canal-web
+        to: eligibility-bff/consultar-elegibilidad
+        op: GET /eligibility/{customerId}
+        protocol: https
+        pathParams:
+          - name: customerId
+            value: 'c-123'
+            required: true
+            description: Identificador del cliente autenticado
+        queryParams:
+          - name: includeOffers
+            value: 'true'
+            required: false
+            description: Incluye ofertas en la respuesta final
+        headers:
+          - name: Authorization
+            value: Bearer [omitido]
+            required: true
+          - name: X-Correlation-Id
+            value: corr-123
+            required: true
+            description: Trazabilidad extremo a extremo
+        request: Sin body
+
+      - from: eligibility-bff/consultar-elegibilidad
+        to: eligibility-cache
+        op: GET eligibility-by-customer · eligibility:{customerId}
+        protocol: redis
+        request: 'eligibility:c-123'
+        purpose: Evitar una llamada a customer-api cuando la elegibilidad vigente ya está calculada.
+
+      - from: eligibility-cache
+        to: eligibility-bff/consultar-elegibilidad
+        op: Cache miss
+        protocol: redis
+        response: miss
+
+      - from: eligibility-bff/consultar-elegibilidad
+        to: customer-api/obtener-perfil
+        op: GET /customers/{customerId}/profile
+        protocol: https
+        pathParams:
+          - name: customerId
+            value: 'c-123'
+            required: true
+        queryParams:
+          - name: fields
+            value: customerId,sex
+            required: false
+            description: Reduce el contrato a los campos que usa eligibility-bff
+        headers:
+          - name: X-Correlation-Id
+            value: corr-123
+            required: true
+          - name: X-Channel
+            value: web
+            required: true
+        request: Sin body
+        purpose: Obtener el sexo del cliente, que participa en la regla de elegibilidad.
+
+      - from: customer-api/obtener-perfil
+        to: eligibility-bff/consultar-elegibilidad
+        op: 200 CustomerProfile
+        protocol: https
+        response: |
+          {
+            "customerId": "c-123",
+            "sex": "F",
+            "name": "[omitido]",
+            "birthDate": "[omitido]"
+          }
+        dataUsed:
+          - customerId
+          - sex
+        note: El DTO trae más datos, pero eligibility-bff solo lee customerId y sex.
+
+      - from: eligibility-bff/consultar-elegibilidad
+        to: eligibility-cache
+        op: SET eligibility-by-customer · eligibility:{customerId}
+        protocol: redis
+        request: |
+          {
+            "customerId": "c-123",
+            "sex": "F",
+            "eligible": true
+          }
+          TTL: 10 min
+        purpose: Guardar el resultado calculado para reutilizarlo durante su vigencia.
+
+      - from: eligibility-cache
+        to: eligibility-bff/consultar-elegibilidad
+        op: Cache actualizado
+        protocol: redis
+        response: OK
+
+      - from: eligibility-bff/consultar-elegibilidad
+        to: canal-web
+        op: 200 EligibilityResponse
+        protocol: https
+        headers:
+          - name: X-Correlation-Id
+            value: corr-123
+            required: true
+        response: |
+          {
+            "customerId": "c-123",
+            "eligible": true,
+            "reason": "PROFILE_RULE_MATCH"
+          }
+        dataUsed:
+          - eligible
+          - reason
+
+  - id: consultar-elegibilidad-cache-hit
+    label: GET /eligibility/{customerId} · cache hit
+    entry: canal-web
+    trigger: El cliente abre una oferta y existe elegibilidad cacheada vigente
+    steps:
+      - from: canal-web
+        to: eligibility-bff/consultar-elegibilidad
+        op: GET /eligibility/{customerId}
+        protocol: https
+        pathParams:
+          - { name: customerId, value: 'c-123', required: true }
+        queryParams:
+          - { name: includeOffers, value: 'true', required: false }
+        headers:
+          - { name: Authorization, value: 'Bearer [omitido]', required: true }
+          - { name: X-Correlation-Id, value: corr-123, required: true }
+        request: Sin body
+
+      - from: eligibility-bff/consultar-elegibilidad
+        to: eligibility-cache
+        op: GET eligibility-by-customer · eligibility:{customerId}
+        protocol: redis
+        request: 'eligibility:c-123'
+        purpose: Reutilizar la elegibilidad vigente sin consultar customer-api.
+
+      - from: eligibility-cache
+        to: eligibility-bff/consultar-elegibilidad
+        op: Cache hit · EligibilityCacheValue
+        protocol: redis
+        response: |
+          {
+            "customerId": "c-123",
+            "sex": "F",
+            "eligible": true
+          }
+        dataUsed:
+          - customerId
+          - sex
+          - eligible
+
+      - from: eligibility-bff/consultar-elegibilidad
+        to: canal-web
+        op: 200 EligibilityResponse
+        protocol: https
+        response: |
+          {
+            "customerId": "c-123",
+            "eligible": true,
+            "reason": "CACHED_PROFILE_RULE_MATCH"
+          }
+        dataUsed:
+          - eligible
+          - reason

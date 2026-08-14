@@ -1,4 +1,4 @@
-import { endpointSignature, type Ir, type IrFlow, type IrNode } from '../schema/compile.js';
+import { endpointSignature, type Ir, type IrFlow, type IrNode, type IrStep } from '../schema/compile.js';
 import {
   anchorPoint,
   computeLayout,
@@ -49,6 +49,8 @@ export interface SvgOptions {
   timeMs?: number;
   /** Origen de los activos locales cuando el SVG se convierte a PNG/JPG en la web. */
   assetBaseUrl?: string;
+  /** Añade al fotograma el mismo contrato que explica el inspector derecho. */
+  includeTrafficPanel?: boolean;
 }
 
 interface Palette {
@@ -117,6 +119,84 @@ function wrapLabel(text: string, maxWidth: number, charWidth: number): string[] 
   }
   if (current) lines.push(current);
   return lines.length > 0 ? lines : [text];
+}
+
+function wrapText(text: string, maxChars = 48): string[] {
+  const result: string[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    if (!rawLine) {
+      result.push('');
+      continue;
+    }
+    let remaining = rawLine;
+    while (remaining.length > maxChars) {
+      let cut = remaining.lastIndexOf(' ', maxChars);
+      if (cut < Math.floor(maxChars * 0.55)) cut = maxChars;
+      result.push(remaining.slice(0, cut));
+      remaining = remaining.slice(cut).trimStart();
+    }
+    result.push(remaining);
+  }
+  return result;
+}
+
+function prettyPayload(value: string): string {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
+function activeStepAt(flow: IrFlow, timeMs: number | undefined, continuous: boolean): IrStep | undefined {
+  if (flow.steps.length === 0) return undefined;
+  if (timeMs === undefined) return flow.steps[0];
+  if (continuous) {
+    const index = Math.min(flow.steps.length - 1, Math.floor(((timeMs % Math.max(flow.durationMs, 1)) / Math.max(flow.durationMs, 1)) * flow.steps.length));
+    return flow.steps[index];
+  }
+  return flow.steps.find((step) => timeMs >= step.startMs && timeMs <= step.startMs + step.durationMs)
+    ?? [...flow.steps].reverse().find((step) => step.startMs <= timeMs)
+    ?? flow.steps[0];
+}
+
+function renderTrafficPanel(step: IrStep, palette: Palette, width = 376): { svg: string; height: number } {
+  const parts: string[] = [];
+  const inset = 18;
+  let y = 24;
+  const line = (value: string, options: { color?: string; mono?: boolean; bold?: boolean; size?: number } = {}) => {
+    parts.push(`<text x="${inset}" y="${y}" font-family="${options.mono ? MONO : FONT}" font-size="${options.size ?? 10.5}"${options.bold ? ' font-weight="700"' : ''} fill="${options.color ?? palette.text}">${escapeXml(value)}</text>`);
+    y += (options.size ?? 10.5) + 6;
+  };
+  const divider = () => {
+    y += 5;
+    parts.push(`<path d="M ${inset} ${y} H ${width - inset}" stroke="${palette.nodeStroke}" stroke-width="1" />`);
+    y += 17;
+  };
+  const section = (title: string, values: string[], mono = false) => {
+    if (values.length === 0) return;
+    line(title.toUpperCase(), { color: palette.textMuted, bold: true, size: 9 });
+    for (const value of values) for (const wrapped of wrapText(value)) line(wrapped || ' ', { mono, size: mono ? 9.5 : 10 });
+    divider();
+  };
+
+  const kind = step.request ? 'REQUEST' : 'RESPONSE';
+  line(`${kind} · PASO ${step.index + 1}`, { color: kind === 'REQUEST' ? '#38bdf8' : '#a78bfa', bold: true, size: 10 });
+  for (const wrapped of wrapText(step.label, 44)) line(wrapped, { mono: true, bold: true, size: 12 });
+  line(`${step.from}${step.fromOp ? ` / ${step.fromOp}` : ''}  →  ${step.to}${step.toOp ? ` / ${step.toOp}` : ''}`, { color: palette.textMuted, mono: true, size: 9 });
+  divider();
+
+  section('¿Por qué ocurre?', step.purpose ? [step.purpose] : []);
+  section('Datos realmente utilizados', step.dataUsed);
+  section('Path params', step.pathParams.map((item) => `${item.name}${item.value ? ` = ${item.value}` : ''}${item.required ? ' · required' : ''}${item.description ? ` · ${item.description}` : ''}`), true);
+  section('Query params', step.queryParams.map((item) => `${item.name}${item.value ? ` = ${item.value}` : ''}${item.required ? ' · required' : ''}${item.description ? ` · ${item.description}` : ''}`), true);
+  section('Headers', step.headers.map((item) => `${item.name}${item.value ? ` = ${item.value}` : ''}${item.required ? ' · required' : ''}${item.description ? ` · ${item.description}` : ''}`), true);
+  section(kind === 'REQUEST' ? 'Request body' : 'Response body', wrapText(prettyPayload(step.request ?? step.response ?? step.returns ?? 'Sin body'), 50), true);
+  section('Nota', step.note ? [step.note] : []);
+
+  const height = Math.max(180, y + 6);
+  parts.unshift(`<rect width="${width}" height="${height}" rx="12" fill="${palette.nodeFill}" stroke="${palette.nodeStroke}" />`);
+  return { svg: parts.join('\n      '), height };
 }
 
 /** Parte una ruta en dos renglones sin perder caracteres. */
@@ -260,7 +340,7 @@ function renderNode(node: IrNode, box: Box, palette: Palette, dimmed: boolean, a
 }
 
 export async function toSvg(ir: Ir, options: SvgOptions = {}): Promise<string> {
-  const { flowId, numberSteps = true, transparent = false, light = false, padding = 32, timeMs, assetBaseUrl } = options;
+  const { flowId, numberSteps = true, transparent = false, light = false, padding = 32, timeMs, assetBaseUrl, includeTrafficPanel = false } = options;
 
   const palette = light ? LIGHT : DARK;
   const laid = await computeLayout(ir);
@@ -304,9 +384,14 @@ export async function toSvg(ir: Ir, options: SvgOptions = {}): Promise<string> {
     minY = 0;
   }
 
-  const width = maxX - minX + padding * 2;
+  const diagramWidth = maxX - minX + padding * 2;
   const titleHeight = 46;
-  const height = maxY - minY + padding * 2 + titleHeight;
+  const diagramHeight = maxY - minY + padding * 2 + titleHeight;
+  const trafficStep = includeTrafficPanel && flow ? activeStepAt(flow, timeMs, ir.animation.mode === 'continuo') : undefined;
+  const trafficPanel = trafficStep ? renderTrafficPanel(trafficStep, palette) : undefined;
+  const panelGap = trafficPanel ? 18 : 0;
+  const width = diagramWidth + (trafficPanel ? 376 + panelGap : 0);
+  const height = Math.max(diagramHeight, trafficPanel ? trafficPanel.height + padding * 2 : 0);
 
   const body: string[] = [];
 
@@ -449,10 +534,11 @@ export async function toSvg(ir: Ir, options: SvgOptions = {}): Promise<string> {
   </defs>
   ${transparent ? '' : `<rect width="${width}" height="${height}" fill="${palette.background}" />`}
   <text x="${padding}" y="${padding}" font-size="16" font-weight="650" fill="${palette.text}">${escapeXml(ir.meta.name)}</text>
-  ${subtitle ? `<text x="${padding}" y="${padding + 19}" font-size="11.5" fill="${palette.textMuted}">${escapeXml(truncate(subtitle, width - padding * 2, 6))}</text>` : ''}
+  ${subtitle ? `<text x="${padding}" y="${padding + 19}" font-size="11.5" fill="${palette.textMuted}">${escapeXml(truncate(subtitle, diagramWidth - padding * 2, 6))}</text>` : ''}
   <g transform="translate(${padding - minX}, ${padding + titleHeight - minY})">
     ${body.join('\n    ')}
   </g>
+  ${trafficPanel ? `<g transform="translate(${diagramWidth + panelGap}, ${padding})">${trafficPanel.svg}</g>` : ''}
 </svg>
 `;
 }

@@ -127,9 +127,13 @@ Un flujo es un escenario de ejecución con nombre. **Es lo que se anima.**
 | `condition` | string | — | `cache miss`, `cliente premium` |
 | `latencyMs` | number | — | Se muestra y modula la duración de la animación |
 | `returns` | string | — | Documenta la respuesta sin añadir un paso de vuelta |
-| `request` | string | — | Contrato o ejemplo que viaja hacia el destino; acompaña al paquete animado |
+| `request` | string | — | Body que viaja hacia el destino; usa `Sin body` cuando no existe |
 | `response` | string | — | Contrato o ejemplo que vuelve; en un paso inverso identifica el paquete como respuesta |
+| `pathParams` | lista de `{name, value?, required?, description?}` | `[]` | Parámetros embebidos en la ruta; no forman parte del body |
+| `queryParams` | lista de `{name, value?, required?, description?}` | `[]` | Parámetros de query string; no forman parte del body |
 | `headers` | lista de `{name, value?, required?, description?}` | `[]` | Headers que viajan en el paso; los obligatorios se resaltan en el inspector |
+| `purpose` | string | — | Por qué el llamador necesita ejecutar este salto |
+| `dataUsed` | lista de string | `[]` | Campos concretos de la respuesta o valor que el llamador realmente utiliza |
 | `labelPosition` | `{x, y}` | — | Preferencia horizontal del rótulo; el renderer siempre la proyecta encima de la flecha |
 | `layout` | ruta | — | Puntos de control del conector para este paso; permite editar aristas inferidas |
 | `note` | string | — | |
@@ -137,6 +141,8 @@ Un flujo es un escenario de ejecución con nombre. **Es lo que se anima.**
 Los extremos `from` y `to` aceptan `nodo/operación` cuando la operación tiene `id` en `provides`. En un nodo `expanded`, la flecha se ancla a esa fila concreta. Para que una llamada realizada por un endpoint nazca en su caja, usa también la operación en el origen: `from: auth-service/autenticar`.
 
 En una vista que explica ejecución completa, representa también los retornos como pasos (`base → endpoint` y finalmente `endpoint → canal`). Usa `request` en los pasos de ida y `response` en esos pasos inversos: así el editor identifica correctamente cada paquete. El auto-layout toma los requests como dirección del orden espacial; las respuestas recorren ese orden de vuelta sin invertir las capas.
+
+No escribas query/path params dentro de `request`: el inspector y el GIF tienen secciones separadas para URL, headers y body. En cachés, bases y APIs salientes usa `purpose` y `dataUsed` para distinguir “consulta el perfil” de “consulta el perfil porque solo necesita `sex`”.
 
 El renderer asigna carriles paralelos y estables a ida y vuelta. Las etiquetas automáticas se colocan encima del tramo horizontal principal; `labelPosition` solo es necesario cuando una revisión humana quiere ajustar una excepción.
 La tarjeta animada prueba posiciones superiores centrada, hacia el origen y hacia el destino, y elige la primera que no cubra una caja de servicio.

@@ -17,7 +17,12 @@ Y hay un límite que **debes comunicar siempre al usuario**: el análisis estát
 
 ## Procedimiento
 
-Antes de comenzar, lee [references/endpoint-flow-template.md](references/endpoint-flow-template.md). Úsala como plantilla obligatoria para cada endpoint: está escrita deliberadamente como un procedimiento de baja libertad para modelos que no completan pasos implícitos.
+Antes de comenzar, lee completos estos dos recursos:
+
+1. [references/endpoint-flow-template.md](references/endpoint-flow-template.md), como procedimiento de baja libertad.
+2. [references/complete-endpoint-example.arch.yaml](references/complete-endpoint-example.arch.yaml), como patrón canónico sin placeholders.
+
+Imita la **estructura**, no los nombres del ejemplo. Para cada endpoint conserva entrada, ida, retorno, cierre al canal, anclas `servicio/operacion`, params separados, headers, body, `purpose` y `dataUsed`. Elimina una sección solo cuando la evidencia demuestre que no aplica. No confíes en recordar la lista desde prosa: compara el YAML terminado lado a lado con el ejemplo y ejecuta el auditor estricto.
 
 ### 0. Sincronizar el repositorio antes de leerlo
 
@@ -217,13 +222,25 @@ Cada intercambio síncrono debe explicar el contrato y representar el viaje comp
 
 No termines el flujo en una caché, base de datos o API dependiente: vuelve al endpoint y cierra con la respuesta del endpoint al canal.
 
-- **Entrada al endpoint escaneado:** método, ruta, path/query params, headers relevantes y cuerpo/DTO que recibe. La respuesta final pertenece a otra flecha, desde `servicio/operacion` hacia el canal, con status y DTO en `response`.
+- **Entrada al endpoint escaneado:** método y ruta en `op`, parámetros de ruta en `pathParams`, query string en `queryParams`, headers relevantes en `headers` y exclusivamente el body/DTO en `request`. La respuesta final pertenece a otra flecha, desde `servicio/operacion` hacia el canal, con status y DTO en `response`.
 - **Caché:** la flecha de ida lleva en `request` la operación y clave exacta o patrón de clave; la flecha de vuelta lleva en `response` el tipo/estructura del valor y cómo se interpreta hit, miss o error. Si escribe, indica qué valor guarda y TTL cuando esté probado.
 - **API saliente:** la flecha de ida lleva método, path, headers/params/body; la flecha de vuelta lleva en `response` el status y DTO/campos que consume el llamador.
 - **Broker:** topic, key, headers y payload; si es fire-and-forget usa `async: true` y omite una respuesta inexistente.
 - **Base de datos:** consulta u operación y parámetros; en `response`, filas/entidad/campos leídos o confirmación de escritura.
 
 Declara los headers en `headers:` como datos estructurados; no los escondas dentro del texto de `request`. Incluye todos los obligatorios demostrados por OpenAPI, anotaciones, filtros o el cliente HTTP, marca `required: true` y sustituye secretos por `[omitido]`. `Content-Type` cuenta cuando el contrato exige un cuerpo JSON. Repite en cada salto solo los headers que realmente se propagan o crean allí; no supongas que todos atraviesan todas las capas. El inspector de tráfico usa esta estructura para destacarlos al estilo Swagger.
+
+Declara los parámetros de URL como datos estructurados. No escribas `customerId=123` dentro de `request` ni lo presentes como request body:
+
+```yaml
+pathParams:
+  - { name: customerId, value: '123', required: true }
+queryParams:
+  - { name: includeInactive, value: 'false', required: false }
+request: Sin body
+```
+
+En cada salto hacia caché, datos o un servicio saliente, escribe `purpose` con la razón concreta de la llamada. En el retorno, escribe `dataUsed` con el subconjunto que el llamador realmente lee. No digas “obtiene el perfil” si el código solo consulta `sex`; haz visible ambas cosas: el DTO recibido en `response` y `dataUsed: [sex]`. Para escrituras, `purpose` debe explicar qué se guarda y para qué se reutilizará.
 
 Usa evidencia del DTO, firma, serializador, mapper, cliente y manejo de respuesta. Puedes resumir estructuras grandes, pero conserva nombres de campos. No inventes valores ni secretos. Si una parte no puede determinarse estáticamente, escribe lo comprobable y añade en `note` qué quedó sin resolver; no fabriques un contrato para llenar el campo.
 
@@ -234,7 +251,7 @@ En los pasos de ida usa `request`; en los pasos explícitos de retorno usa `resp
 No dejes `request: ''` ni `response: ''`:
 
 - Si hay body, muestra JSON válido o una estructura tipada con los nombres reales de los campos.
-- Si la petición no tiene body, documenta en `request` los path/query params; si tampoco existen, escribe `Sin body`.
+- Si la petición no tiene body, escribe `request: Sin body`; conserva path y query params exclusivamente en `pathParams` y `queryParams`.
 - Si la respuesta es `204`, escribe `Sin body (204)` en `response`.
 - Si el código no permite conocer la estructura, escribe lo conocido y usa `note: Contrato no resuelto estáticamente; revisar <evidencia>`. No inventes campos.
 - Si existen varios status relevantes (`200`, `400`, `401`, `404`, `500`), crea flujos separados al menos para el camino feliz y los errores que cambian el recorrido o el contrato.
@@ -277,9 +294,11 @@ Considera incompleto —aunque `archiflow validate` no reporte error estructural
 
 - [ ] Empieza en un canal/trigger y entra a `servicio/operacion`.
 - [ ] La flecha inicial contiene método+ruta, parámetros/body y headers obligatorios demostrables.
+- [ ] Path params y query params viven en `pathParams`/`queryParams`; `request` contiene solo el body o `Sin body`.
 - [ ] Cada llamada síncrona tiene una flecha de ida con `request` y otra de vuelta con `response`.
 - [ ] Cada caché indica operación+clave y devuelve hit/miss/valor; cada escritura indica valor y TTL si existe evidencia.
 - [ ] Cada API saliente indica método+ruta, headers/params/body enviados y status/body recibido.
+- [ ] Cada dependencia explica `purpose`; cada retorno no trivial declara los campos realmente consumidos en `dataUsed`.
 - [ ] Toda llamada servicio→servicio sale de `origen/operacion` y termina en `destino/operacion` cuando el cliente revela la operación destino.
 - [ ] Cada acceso a caché/datos identifica conexión o pool y el recurso concreto: mapa/clave, base/esquema/tabla, colección o procedimiento.
 - [ ] Cada publicación asíncrona indica topic, key, headers y payload y usa `async: true`; no se inventa retorno.
@@ -292,8 +311,11 @@ Considera incompleto —aunque `archiflow validate` no reporte error estructural
 
 ```bash
 npx archiflow validate <directorio>
+npx archiflow validate-scan <fichero.arch.yaml>
 npx archiflow serve <directorio> --open
 ```
+
+`validate-scan` es bloqueante: si falla, corrige el YAML y ejecútalo de nuevo. No sustituyas su resultado con una revisión visual o con la afirmación de que el contrato “se entiende”.
 
 Generar el YAML no completa la tarea. Después de validar, **debes levantar `archiflow serve` sobre el directorio que contiene el `.arch.yaml`**, comprobar que la URL local responde y entregar esa URL al usuario. El proceso debe quedar activo para que pueda revisar el diagrama y darte feedback.
 

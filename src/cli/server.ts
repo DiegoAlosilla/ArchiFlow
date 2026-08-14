@@ -229,17 +229,22 @@ export async function serve({ root, port, open }: ServeOptions): Promise<void> {
         try {
           const request = JSON.parse(await readBody(req)) as ImportRequest;
           if (!request.name || !request.source) throw new Error('falta el nombre o el contenido del diagrama');
-          const evidence = importDiagram(request.source);
-          const draft = toDraft(evidence, { name: path.basename(request.name).replace(/\.(?:drawio|xml)$/i, '') });
-          const parsed = parseDiagram(draft.yaml);
+          const nativeYaml = /\.ya?ml$/i.test(request.name);
+          const evidence = nativeYaml ? undefined : importDiagram(request.source);
+          const draft = evidence
+            ? toDraft(evidence, { name: path.basename(request.name).replace(/\.(?:drawio|xml)$/i, '') })
+            : undefined;
+          const source = draft?.yaml ?? request.source;
+          const parsed = parseDiagram(source);
           if (!parsed.ok) {
-            json({ ok: false, error: 'la importación produjo un borrador inválido' }, 422);
+            const detail = parsed.issues.filter((issue) => issue.level === 'error').slice(0, 3).map((issue) => issue.message).join('; ');
+            json({ ok: false, error: nativeYaml ? `YAML de ArchiFlow inválido: ${detail}` : 'la importación produjo un borrador inválido' }, 422);
             return;
           }
 
           const stem = path
             .basename(request.name)
-            .replace(/\.(?:drawio|xml)$/i, '')
+            .replace(/(?:\.arch)?\.(?:ya?ml|drawio|xml)$/i, '')
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .replace(/[^a-zA-Z0-9._-]+/g, '-')
@@ -247,18 +252,27 @@ export async function serve({ root, port, open }: ServeOptions): Promise<void> {
           let file = `${stem}.arch.yaml`;
           let suffix = 2;
           while (existsSync(path.join(root, file))) file = `${stem}-${suffix++}.arch.yaml`;
-          await writeFile(path.join(root, file), draft.yaml, 'utf8');
+          await writeFile(path.join(root, file), source, 'utf8');
           await reload(true);
           json({
             ok: true,
             file,
-            warnings: draft.warnings,
-            summary: {
-              pages: evidence.pages.length,
-              shapes: evidence.shapes.length,
-              containers: evidence.shapes.filter((shape) => shape.container).length,
-              links: evidence.links.length,
-            },
+            warnings: draft?.warnings,
+            summary: nativeYaml
+              ? {
+                  pages: 1,
+                  shapes: parsed.diagram!.nodes.length,
+                  containers: parsed.diagram!.zones.length,
+                  links: parsed.diagram!.edges.length + parsed.diagram!.flows.reduce((count, flow) => count + flow.steps.length, 0),
+                  flows: parsed.diagram!.flows.length,
+                  nodes: parsed.diagram!.nodes.length,
+                }
+              : {
+                  pages: evidence!.pages.length,
+                  shapes: evidence!.shapes.length,
+                  containers: evidence!.shapes.filter((shape) => shape.container).length,
+                  links: evidence!.links.length,
+                },
           }, 200);
         } catch (error) {
           json({ ok: false, error: (error as Error).message }, 400);

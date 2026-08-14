@@ -167,4 +167,22 @@ describe('compile', () => {
     expect(step.headers).toEqual([{ name: 'Authorization', value: 'Bearer [omitido]', required: true }]);
     expect(step.layout?.points).toHaveLength(2);
   });
+
+  it('separa parámetros de URL, body y propósito del salto', () => {
+    const parsed = parseDiagram(`${minimal.replace('op: GET /x', `op: GET /x/{customerId}
+        pathParams:
+          - { name: customerId, value: '123', required: true }
+        queryParams:
+          - { name: includeInactive, value: 'false', required: false }
+        request: Sin body
+        purpose: Recuperar el perfil para evaluar la solicitud
+        dataUsed: [customerId, sex]`)}`);
+    expect(parsed.ok).toBe(true);
+    const step = compile(parsed.diagram!).flows[0]!.steps[0]!;
+    expect(step.pathParams[0]?.name).toBe('customerId');
+    expect(step.queryParams[0]?.required).toBe(false);
+    expect(step.request).toBe('Sin body');
+    expect(step.purpose).toContain('perfil');
+    expect(step.dataUsed).toEqual(['customerId', 'sex']);
+  });
 });

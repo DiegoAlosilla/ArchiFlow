@@ -8,6 +8,7 @@ import type {
   NodeKind,
   Operation,
   Header,
+  HttpParameter,
   Protocol,
 } from './schema.js';
 
@@ -89,7 +90,11 @@ export interface IrStep {
   toOp?: string;
   request?: string;
   response?: string;
+  pathParams: HttpParameter[];
+  queryParams: HttpParameter[];
   headers: Header[];
+  purpose?: string;
+  dataUsed: string[];
   labelPosition?: { x: number; y: number };
   layout?: EdgeLayout;
   /** Momento de inicio dentro del flujo, en ms. */
@@ -292,7 +297,11 @@ export function compile(diagram: Diagram): Ir {
         note: step.note,
         request: step.request,
         response: step.response,
+        pathParams: step.pathParams,
+        queryParams: step.queryParams,
         headers: step.headers,
+        purpose: step.purpose,
+        dataUsed: step.dataUsed,
         labelPosition: step.labelPosition,
         layout: step.layout,
         startMs,

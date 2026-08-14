@@ -63,6 +63,7 @@ export interface ImportRequest {
 
 export interface ImportResponse {
   ok: boolean;
+  imported?: number;
   file?: string;
   error?: string;
   warnings?: string[];
@@ -71,6 +72,8 @@ export interface ImportResponse {
     shapes: number;
     containers: number;
     links: number;
+    flows?: number;
+    nodes?: number;
   };
 }
 

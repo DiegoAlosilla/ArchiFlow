@@ -75,6 +75,21 @@ export function TrafficInspector({ step, pinned, onFollow }: Props) {
         <div><dt>Protocolo</dt><dd>{step.protocol}</dd></div>
       </dl>
 
+      {(step.purpose || step.dataUsed.length > 0) && (
+        <div className="traffic__section traffic__purpose">
+          {step.purpose && <><h3>¿Por qué ocurre este salto?</h3><p>{step.purpose}</p></>}
+          {step.dataUsed.length > 0 && <><h4>Datos utilizados por el llamador</h4><ul>{step.dataUsed.map((field) => <li key={field}><code>{field}</code></li>)}</ul></>}
+        </div>
+      )}
+
+      {step.pathParams.length > 0 && (
+        <ContractItems title="Path params" values={step.pathParams} />
+      )}
+
+      {step.queryParams.length > 0 && (
+        <ContractItems title="Query params" values={step.queryParams} />
+      )}
+
       <div className="traffic__section">
         <h3>Headers <span>{step.headers.length}</span></h3>
         {step.headers.length > 0 ? (
@@ -95,5 +110,22 @@ export function TrafficInspector({ step, pinned, onFollow }: Props) {
         <PayloadPreview payload={payload ?? 'Sin cuerpo'} />
       </div>
     </section>
+  );
+}
+
+function ContractItems({ title, values }: { title: string; values: IrStep['queryParams'] }) {
+  return (
+    <div className="traffic__section">
+      <h3>{title} <span>{values.length}</span></h3>
+      <ul className="traffic__headers">
+        {values.map((parameter) => (
+          <li key={parameter.name}>
+            <code>{parameter.name}</code>
+            {parameter.required && <b>required</b>}
+            <span>{parameter.value ?? parameter.description ?? 'valor requerido'}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

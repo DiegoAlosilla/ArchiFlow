@@ -450,16 +450,46 @@ function StepInspector({ ir, selection, onSelect, mutate }: Props) {
       />
 
       <TextField
-        label="Request de ejemplo"
+        label="Path params"
+        value={contractListText(step.pathParams)}
+        mono
+        multiline
+        placeholder="customerId = 123 | required | Identificador del cliente"
+        hint="Uno por línea. No se mezclan con el body."
+        onCommit={(value) => patch({ pathParams: parseContractList(value) })}
+      />
+
+      <TextField
+        label="Query params"
+        value={contractListText(step.queryParams)}
+        mono
+        multiline
+        placeholder="includeInactive = false | optional"
+        hint="Uno por línea. No se mezclan con el body."
+        onCommit={(value) => patch({ queryParams: parseContractList(value) })}
+      />
+
+      <TextField
+        label="Headers"
+        value={contractListText(step.headers)}
+        mono
+        multiline
+        placeholder="X-Correlation-Id | required | Trazabilidad"
+        hint="Uno por línea; usa optional para marcarlo no obligatorio."
+        onCommit={(value) => patch({ headers: parseContractList(value) })}
+      />
+
+      <TextField
+        label="Request body"
         value={step.request}
         mono
         multiline
-        hint="Texto libre; puede ser JSON incompleto durante el diseño."
+        hint="Solo el cuerpo. Path y query params tienen su propio espacio."
         onCommit={(value) => patch({ request: value })}
       />
 
       <TextField
-        label="Response de ejemplo"
+        label="Response body"
         value={step.response}
         mono
         multiline
@@ -481,7 +511,50 @@ function StepInspector({ ir, selection, onSelect, mutate }: Props) {
         Formatear JSON
       </button>
 
+      <TextField
+        label="¿Por qué se llama?"
+        value={step.purpose}
+        multiline
+        placeholder="Recuperar el perfil cacheado para decidir la elegibilidad"
+        onCommit={(value) => patch({ purpose: value })}
+      />
+
+      <TextField
+        label="Datos que realmente usa"
+        value={step.dataUsed.join('\n')}
+        mono
+        multiline
+        placeholder={'customerId\nsex'}
+        hint="Un campo por línea; evita decir que se consume todo el DTO si solo se usa una parte."
+        onCommit={(value) => patch({ dataUsed: value?.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) ?? [] })}
+      />
+
       <TextField label="Nota" value={step.note} multiline onCommit={(value) => patch({ note: value })} />
     </div>
   );
+}
+
+type ContractItem = { name: string; value?: string; required: boolean; description?: string };
+
+function contractListText(items: ContractItem[]): string {
+  return items.map((item) => [
+    item.value ? `${item.name} = ${item.value}` : item.name,
+    item.required ? 'required' : 'optional',
+    item.description,
+  ].filter(Boolean).join(' | ')).join('\n');
+}
+
+function parseContractList(value: string | undefined): ContractItem[] {
+  return (value ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const [head = '', requirement, ...description] = line.split('|').map((part) => part.trim());
+    const separator = head.indexOf('=');
+    const name = (separator >= 0 ? head.slice(0, separator) : head).trim();
+    const itemValue = separator >= 0 ? head.slice(separator + 1).trim() : undefined;
+    return {
+      name,
+      ...(itemValue ? { value: itemValue } : {}),
+      required: requirement?.toLowerCase() !== 'optional',
+      ...(description.length > 0 ? { description: description.join(' | ') } : {}),
+    };
+  }).filter((item) => item.name.length > 0);
 }
