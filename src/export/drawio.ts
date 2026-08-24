@@ -102,6 +102,19 @@ function edgeStyle(edge: IrEdge, dimmed: boolean): string {
   ].join('');
 }
 
+function boundaryAnchorStyle(sourceBox: Box | undefined, targetBox: Box | undefined, sourceExpanded: boolean, targetExpanded: boolean): string {
+  const goesRight = sourceBox == null || targetBox == null || sourceBox.x <= targetBox.x;
+  const ratio = (box: Box | undefined, expanded: boolean) => {
+    if (!expanded || box == null || box.height === 0) return 0.5;
+    return Math.max(0.08, Math.min(0.92, (NODE_HEADER + ENDPOINT_ROW / 2) / box.height));
+  };
+  return [
+    `exitX=${goesRight ? 1 : 0};entryX=${goesRight ? 0 : 1};`,
+    `exitY=${ratio(sourceBox, sourceExpanded)};entryY=${ratio(targetBox, targetExpanded)};`,
+    'exitDx=0;exitDy=0;entryDx=0;entryDy=0;',
+  ].join('');
+}
+
 function zoneStyle(color: string, archimate = false): string {
   // Una zona es un Grouping (ADR-003): con formas ArchiMate se dibuja como tal
   // en vez de como un rectángulo punteado cualquiera.
@@ -336,10 +349,18 @@ function renderPage(ir: Ir, boxes: Map<string, Box>, zoneBoxes: Box[], options: 
       if (!edge) continue;
       const condition = step.condition ? ` [${step.condition}]` : '';
       const lines = flow ? [`${index + 1}. ${step.label}${condition}`] : [step.label];
-      const source = stepCellId(ir, step.from, step.fromOp);
-      const target = stepCellId(ir, step.to, step.toOp);
+      const sourceNode = ir.nodes.find((node) => node.id === step.from);
+      const targetNode = ir.nodes.find((node) => node.id === step.to);
+      const source = cellId('n', step.from);
+      const target = cellId('n', step.to);
+      const anchors = boundaryAnchorStyle(
+        boxes.get(step.from),
+        boxes.get(step.to),
+        Boolean(step.fromOp && sourceNode?.expanded),
+        Boolean(step.toOp && targetNode?.expanded),
+      );
       cells.push(
-        `<mxCell id="${cellId('fs', `${visibleFlow.id}-${index + 1}`)}" value="${escapeXml(multilineLabel(lines))}" style="${edgeStyle(edge, false)}" edge="1" parent="1" source="${source}" target="${target}">` +
+        `<mxCell id="${cellId('fs', `${visibleFlow.id}-${index + 1}`)}" value="${escapeXml(multilineLabel(lines))}" style="${edgeStyle(edge, false)}${anchors}" edge="1" parent="1" source="${source}" target="${target}">` +
           '<mxGeometry relative="1" as="geometry" /></mxCell>',
       );
     }

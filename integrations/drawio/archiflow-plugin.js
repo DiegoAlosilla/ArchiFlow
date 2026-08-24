@@ -17,8 +17,8 @@ Draw.loadPlugin(function(ui)
     var graph = ui.editor.graph;
     var model = graph.getModel();
     var STORE_ATTRIBUTE = 'archiflowFlows';
-    var STEP_DELAY = 520;
-    var PARTICLE_DURATION = 1050;
+    var STEP_DELAY = 150;
+    var PARTICLE_DURATION = 850;
     var store = null;
     var selectedStep = 0;
     var recording = false;
@@ -178,6 +178,28 @@ Draw.loadPlugin(function(ui)
             }
         }
 
+        var fromComponent = componentForCell(fromCell);
+        var toComponent = componentForCell(toCell);
+
+        if (fromComponent != null && toComponent != null && fromComponent !== toComponent)
+        {
+            edges = graph.getEdgesBetween(fromComponent, toComponent, true);
+            if (edges == null || edges.length === 0)
+            {
+                edges = graph.getEdgesBetween(fromComponent, toComponent, false);
+            }
+
+            for (var managedIndex = 0; edges != null && managedIndex < edges.length; managedIndex++)
+            {
+                var managedEdge = edges[managedIndex];
+                if (graph.getAttributeForCell(managedEdge, 'archiflowSourceEndpoint', '') === fromCell.id &&
+                    graph.getAttributeForCell(managedEdge, 'archiflowTargetEndpoint', '') === toCell.id)
+                {
+                    return managedEdge;
+                }
+            }
+        }
+
         return null;
     }
 
@@ -259,9 +281,26 @@ Draw.loadPlugin(function(ui)
             }
         }
 
-        if (model.getTerminal(edge, true) !== fromCell)
+        if (fromCell != null && points.length > 1)
         {
-            points.reverse();
+            var fromState = graph.view.getState(fromCell);
+            if (fromState != null)
+            {
+                var centerX = fromState.x + fromState.width / 2;
+                var centerY = fromState.y + fromState.height / 2;
+                var firstDx = points[0].x - centerX;
+                var firstDy = points[0].y - centerY;
+                var lastDx = points[points.length - 1].x - centerX;
+                var lastDy = points[points.length - 1].y - centerY;
+                if (lastDx * lastDx + lastDy * lastDy < firstDx * firstDx + firstDy * firstDy)
+                {
+                    points.reverse();
+                }
+            }
+            else if (model.getTerminal(edge, true) !== fromCell)
+            {
+                points.reverse();
+            }
         }
 
         return points;
@@ -605,7 +644,7 @@ Draw.loadPlugin(function(ui)
             var encoder = await loadGifEncoder();
             var frames = [];
             var dimensions = null;
-            var samples = movements.length > 10 ? 4 : 7;
+            var samples = Math.max(8, Math.min(14, Math.floor(96 / movements.length)));
             var total = movements.length * samples;
 
             for (var i = 0; i < movements.length; i++)
@@ -620,7 +659,7 @@ Draw.loadPlugin(function(ui)
             }
 
             var palette = encoder.buildPalette('#ffffff', ['#0f172a', '#475569', '#6366f1', '#10b981', '#ef4444', '#ffffff']);
-            var bytes = encoder.encodeGif(frames, palette, { width: dimensions.width, height: dimensions.height, delayMs: 150 });
+            var bytes = encoder.encodeGif(frames, palette, { width: dimensions.width, height: dimensions.height, delayMs: 75 });
             var download = document.createElement('a');
             var blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }));
             download.href = blobUrl;
@@ -1193,7 +1232,8 @@ Draw.loadPlugin(function(ui)
 
         while (current != null && current !== model.getRoot())
         {
-            if (graph.getAttributeForCell(current, 'archiflowKind', '') === 'uml-component')
+            var kind = graph.getAttributeForCell(current, 'archiflowKind', '');
+            if (kind === 'uml-component' || kind === 'component')
             {
                 return current;
             }
@@ -1202,6 +1242,114 @@ Draw.loadPlugin(function(ui)
         }
 
         return null;
+    }
+
+    function endpointRatio(endpoint, component)
+    {
+        var endpointGeometry = model.getGeometry(endpoint);
+        var componentGeometry = model.getGeometry(component);
+        if (endpointGeometry == null || componentGeometry == null || componentGeometry.height === 0)
+        {
+            return .5;
+        }
+
+        return Math.max(.08, Math.min(.92,
+            (endpointGeometry.y + endpointGeometry.height / 2) / componentGeometry.height));
+    }
+
+    function routeManagedEdgeAtComponentBorders(edge, phase, semanticSource, semanticTarget)
+    {
+        if (edge == null)
+        {
+            return;
+        }
+
+        var sourceEndpointId = graph.getAttributeForCell(edge, 'archiflowSourceEndpoint', null);
+        var targetEndpointId = graph.getAttributeForCell(edge, 'archiflowTargetEndpoint', null);
+        var sourceTerminal = model.getTerminal(edge, true);
+        var targetTerminal = model.getTerminal(edge, false);
+        var sourceEndpoint = semanticSource || (sourceEndpointId != null ? model.getCell(sourceEndpointId) : sourceTerminal);
+        var targetEndpoint = semanticTarget || (targetEndpointId != null ? model.getCell(targetEndpointId) : targetTerminal);
+        var sourceComponent = componentForCell(sourceEndpoint);
+        var targetComponent = componentForCell(targetEndpoint);
+
+        if (sourceEndpoint == null || targetEndpoint == null || sourceComponent == null || targetComponent == null ||
+            sourceComponent === targetComponent)
+        {
+            return;
+        }
+
+        var sourceGeometry = model.getGeometry(sourceComponent);
+        var targetGeometry = model.getGeometry(targetComponent);
+        if (sourceGeometry == null || targetGeometry == null)
+        {
+            return;
+        }
+
+        graph.setAttributeForCell(edge, 'archiflowSourceEndpoint', sourceEndpoint.id);
+        graph.setAttributeForCell(edge, 'archiflowTargetEndpoint', targetEndpoint.id);
+        model.setTerminal(edge, sourceComponent, true);
+        model.setTerminal(edge, targetComponent, false);
+
+        var goesRight = sourceGeometry.x + sourceGeometry.width / 2 < targetGeometry.x + targetGeometry.width / 2;
+        var styleValue = edge.style || '';
+        styleValue = mxUtils.setStyle(styleValue, mxConstants.STYLE_EXIT_X, goesRight ? '1' : '0');
+        styleValue = mxUtils.setStyle(styleValue, mxConstants.STYLE_ENTRY_X, goesRight ? '0' : '1');
+        var laneOffset = phase === 'response' ? .025 : -.025;
+        styleValue = mxUtils.setStyle(styleValue, mxConstants.STYLE_EXIT_Y,
+            String(Math.max(.06, Math.min(.94, endpointRatio(sourceEndpoint, sourceComponent) + laneOffset))));
+        styleValue = mxUtils.setStyle(styleValue, mxConstants.STYLE_ENTRY_Y,
+            String(Math.max(.06, Math.min(.94, endpointRatio(targetEndpoint, targetComponent) + laneOffset))));
+        styleValue = mxUtils.setStyle(styleValue, mxConstants.STYLE_EXIT_DX, '0');
+        styleValue = mxUtils.setStyle(styleValue, mxConstants.STYLE_EXIT_DY, '0');
+        styleValue = mxUtils.setStyle(styleValue, mxConstants.STYLE_ENTRY_DX, '0');
+        styleValue = mxUtils.setStyle(styleValue, mxConstants.STYLE_ENTRY_DY, '0');
+        model.setStyle(edge, styleValue);
+        graph.setAttributeForCell(edge, 'archiflowPhase', phase || 'request');
+    }
+
+    function normalizeDemoEdges()
+    {
+        if (store == null || store.flows == null)
+        {
+            return;
+        }
+
+        model.beginUpdate();
+        try
+        {
+            var seen = {};
+            for (var flowIndex = 0; flowIndex < store.flows.length; flowIndex++)
+            {
+                var flowSteps = store.flows[flowIndex].steps || [];
+                for (var stepIndex = 0; stepIndex < flowSteps.length; stepIndex++)
+                {
+                    var managedStep = flowSteps[stepIndex];
+                    var managedTarget = cellFor(managedStep);
+                    var managedFallback = stepIndex > 0 ? cellFor(flowSteps[stepIndex - 1]) : null;
+                    var managedSource = sourceCellFor(managedStep, managedFallback);
+                    var managedIds = [managedStep.edgeId, managedStep.responseEdgeId];
+                    for (var edgeIndex = 0; edgeIndex < managedIds.length; edgeIndex++)
+                    {
+                        var managedId = managedIds[edgeIndex];
+                        if (managedId != null && !seen[managedId])
+                        {
+                            seen[managedId] = true;
+                            routeManagedEdgeAtComponentBorders(
+                                model.getCell(managedId),
+                                edgeIndex === 1 ? 'response' : 'request',
+                                edgeIndex === 1 ? managedTarget : managedSource,
+                                edgeIndex === 1 ? managedSource : managedTarget
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        finally
+        {
+            model.endUpdate();
+        }
     }
 
     function parseContract(text)
@@ -2313,6 +2461,7 @@ Draw.loadPlugin(function(ui)
             model.endUpdate();
         }
 
+        normalizeDemoEdges();
         ui.editor.modified = false;
         graph.fit(20);
         selectedStep = 0;
@@ -2334,6 +2483,11 @@ Draw.loadPlugin(function(ui)
 
     if (urlParams.archiflowDemo === '1')
     {
-        window.setTimeout(createDemo, 650);
+        window.setTimeout(function()
+        {
+            createDemo();
+            normalizeDemoEdges();
+            graph.refresh();
+        }, 650);
     }
 });

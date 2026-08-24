@@ -270,6 +270,8 @@ describe('nodos expandidos', () => {
     expect(xml).toContain('archiflowKind="endpoint"');
     expect(xml).toContain('id="op-cuentas-listar"');
     expect(xml).toContain('&quot;cellId&quot;:&quot;op-cuentas-listar&quot;');
+    expect(xml).toContain('source="n-api" target="n-cuentas"');
+    expect(xml).toContain('entryY=0.7181818181818181;');
     expect(attributesWithRawMarkup(xml)).toEqual([]);
   });
 
