@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.drawio-runtime*/
 *.log
 
 # Configuración local de la bóveda de Obsidian: es del editor, no del proyecto

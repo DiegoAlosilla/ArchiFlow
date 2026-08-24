@@ -23,6 +23,36 @@ npx archiflow serve ./examples
 
 Abre `http://localhost:4123`. Edita el `.arch.yaml` y el navegador se actualiza solo.
 
+## Demo sobre diagrams.net
+
+La integración experimental usa una copia local de diagrams.net como editor y
+añade la capa semántica de ArchiFlow. La primera ejecución prepara el editor
+open source y después todo se sirve desde la máquina:
+
+```bash
+npm run demo:drawio
+```
+
+Abre la URL local que aparece en pantalla. La demo permite grabar un recorrido
+seleccionando componentes —las flechas se resuelven automáticamente—, reproducirlo
+y editar por paso la operación, protocolo, query/path params, headers, request,
+response, caché, persistencia y notas. Los flujos se guardan dentro de la página
+del propio `.drawio` mediante identificadores de objetos, de modo que mover o
+redimensionar el diagrama no rompe la animación.
+
+Los recorridos son independientes: al pulsar **Grabar** sobre un flujo que ya
+tiene pasos se crea uno nuevo y el anterior se conserva. Desde **Flujo
+animado** se puede seleccionar cualquier paso y moverlo, reemplazar solamente
+su componente, insertar otro después o eliminarlo; ArchiFlow vuelve a resolver
+las conexiones request/response vecinas sin exigir grabar todo el recorrido.
+
+La pestaña **Contrato API** permite seleccionar un componente UML e importar un
+OpenAPI 3.x o Swagger 2.0 en JSON, YAML o YML. El contrato queda asociado al
+componente y ArchiFlow crea o actualiza sus endpoints internos conservando los
+que coincidan por `método + ruta`. La ficha usa una presentación tipo Swagger:
+tags, colores por método, parámetros, request body, schemas y responses. Hay un
+contrato de ejemplo en `examples/openapi-pagos.yaml`.
+
 ## Editar desde la web
 
 El lienzo siempre es editable: al seleccionar un objeto aparece el inspector. Puedes:

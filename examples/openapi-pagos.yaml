@@ -1,0 +1,54 @@
+openapi: 3.0.3
+info:
+  title: Pagos API
+  version: 1.0.0
+servers:
+  - url: https://api.demo.local/ms-pagos
+paths:
+  /v1/pagos/{pagoId}:
+    get:
+      tags: [Pagos]
+      operationId: consultarPago
+      summary: Consultar un pago
+      parameters:
+        - name: pagoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pago encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pago'
+        '404':
+          description: Pago no encontrado
+  /v1/pagos:
+    post:
+      tags: [Pagos]
+      operationId: crearPago
+      summary: Crear un pago
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearPagoRequest'
+      responses:
+        '201':
+          description: Pago creado
+components:
+  schemas:
+    Pago:
+      type: object
+      properties:
+        id: { type: string }
+        estado: { type: string }
+    CrearPagoRequest:
+      type: object
+      required: [monto, moneda]
+      properties:
+        monto: { type: number }
+        moneda: { type: string }

@@ -15,6 +15,7 @@
   ],
   "scripts": {
     "dev": "vite",
+    "demo:drawio": "node scripts/drawio-demo-server.mjs",
     "cli": "tsx src/cli/index.ts",
     "build": "npm run build:web && npm run build:cli",
     "build:web": "vite build",
