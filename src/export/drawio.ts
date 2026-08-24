@@ -1,5 +1,5 @@
 import { endpointSignature, type Ir, type IrEdge, type IrFlow, type IrNode } from '../schema/compile.js';
-import { computeLayout, type Box } from '../layout/index.js';
+import { computeLayout, ENDPOINT_GAP, ENDPOINT_ROW, NODE_HEADER, type Box } from '../layout/index.js';
 import { kindAccent, protocolColor } from '../theme.js';
 
 /**
@@ -153,10 +153,162 @@ interface PageOptions {
   archimate?: boolean;
 }
 
+interface DrawioPluginStep {
+  id: string;
+  cellId: string;
+  fromCellId: string;
+  edgeId: string;
+  direction?: 'request' | 'response';
+  operation: string;
+  protocol: string;
+  purpose: string;
+  queryParams: string;
+  pathParams: string;
+  requestHeaders: string;
+  requestBody: string;
+  responseStatus: string;
+  responseHeaders: string;
+  responseBody: string;
+  cacheOperation: string;
+  cacheKey: string;
+  cacheData: string;
+  cacheTtl: string;
+  notes: string;
+}
+
+interface DrawioPluginFlow {
+  id: string;
+  name: string;
+  timeline?: boolean;
+  steps: DrawioPluginStep[];
+}
+
+function refParts(ir: Ir, reference: string): { nodeId: string; operationId?: string } {
+  if (ir.nodes.some((node) => node.id === reference)) return { nodeId: reference };
+  const slash = reference.lastIndexOf('/');
+  if (slash > 0) {
+    const nodeId = reference.slice(0, slash);
+    if (ir.nodes.some((node) => node.id === nodeId)) {
+      return { nodeId, operationId: reference.slice(slash + 1) };
+    }
+  }
+  return { nodeId: reference };
+}
+
+function operationCellId(ir: Ir, reference: string): string {
+  const { nodeId, operationId } = refParts(ir, reference);
+  return operationId ? cellId('op', `${nodeId}-${operationId}`) : cellId('n', nodeId);
+}
+
+function stepCellId(ir: Ir, nodeId: string, operationId?: string): string {
+  return operationId ? operationCellId(ir, `${nodeId}/${operationId}`) : operationCellId(ir, nodeId);
+}
+
+function parameterText(values: Array<{ name: string; value?: string; required?: boolean; description?: string }>): string {
+  return values.map((item) => {
+    const detail = item.value ?? item.description ?? (item.required ? 'requerido' : 'opcional');
+    return `${item.name}: ${detail}`;
+  }).join('\n');
+}
+
+function openApiFor(node: IrNode): string | undefined {
+  const paths: Record<string, Record<string, unknown>> = {};
+  for (const operation of node.provides) {
+    if (!operation.path) continue;
+    const method = (operation.method ?? 'GET').toLowerCase();
+    paths[operation.path] ??= {};
+    paths[operation.path]![method] = {
+      operationId: operation.id,
+      summary: operation.label ?? operation.description ?? operation.id ?? endpointSignature(operation),
+      description: operation.description,
+      responses: { '200': { description: 'Respuesta exitosa' } },
+      tags: [node.label],
+    };
+  }
+  if (Object.keys(paths).length === 0) return undefined;
+  return JSON.stringify({
+    openapi: '3.0.3',
+    info: { title: node.label, version: '1.0.0', description: node.tech },
+    paths,
+  });
+}
+
+function pluginFlow(ir: Ir, flow: IrFlow): DrawioPluginFlow {
+  return {
+    id: flow.id,
+    name: flow.label,
+    steps: flow.steps.map((step, index) => ({
+      id: `step-${flow.id}-${index + 1}`,
+      cellId: stepCellId(ir, step.to, step.toOp),
+      fromCellId: stepCellId(ir, step.from, step.fromOp),
+      edgeId: cellId('fs', `${flow.id}-${index + 1}`),
+      operation: step.label,
+      protocol: step.protocol,
+      purpose: step.purpose ?? '',
+      queryParams: parameterText(step.queryParams),
+      pathParams: parameterText(step.pathParams),
+      requestHeaders: parameterText(step.headers),
+      requestBody: step.request ?? '',
+      responseStatus: step.response ? '200' : '',
+      responseHeaders: '',
+      responseBody: step.response ?? '',
+      cacheOperation: /cache|redis/i.test(step.protocol) ? step.label : '',
+      cacheKey: '',
+      cacheData: step.dataUsed.join(', '),
+      cacheTtl: '',
+      notes: [step.condition, step.note, step.returns ? `Retorna: ${step.returns}` : ''].filter(Boolean).join('\n'),
+    })),
+  };
+}
+
+function rootCell(flows: DrawioPluginFlow[]): string {
+  const activeFlowId = flows[0]?.id ?? '';
+  const store = JSON.stringify({ version: 1, activeFlowId, flows });
+  return `<object label="" ${STORE_ATTRIBUTE}="${escapeXml(store)}"><mxCell id="0" /></object>`;
+}
+
+const STORE_ATTRIBUTE = 'archiflowFlows';
+
+function nodeCell(node: IrNode, box: Box, parent: string, dimmed: boolean, archimate: boolean | undefined): string[] {
+  const id = cellId('n', node.id);
+  const expanded = node.expanded && node.provides.length > 0;
+  const contract = openApiFor(node);
+  const label = expanded
+    ? `<b>${escapeXml(node.label)}</b>${node.tech ? `<br/><font style="font-size:10px;color:#64748b">${escapeXml(node.tech)}</font>` : ''}`
+    : nodeLabel(node);
+  const attributes = [
+    `label="${escapeXml(label)}"`,
+    'archiflowKind="component"',
+    'archiflowSelectable="1"',
+    contract ? `archiflowOpenApi="${escapeXml(contract)}"` : '',
+  ].filter(Boolean).join(' ');
+  const style = nodeStyle(node, dimmed, archimate) + (expanded ? 'container=1;recursiveResize=0;collapsible=0;' : '');
+  const cells = [
+    `<object ${attributes}><mxCell id="${id}" style="${style}" vertex="1" parent="${parent}">` +
+      `<mxGeometry x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" as="geometry" /></mxCell></object>`,
+  ];
+  if (!expanded) return cells;
+
+  const width = Math.max(128, (box.width - 28 - (node.provides.length - 1) * ENDPOINT_GAP) / node.provides.length);
+  node.provides.forEach((operation, index) => {
+    const operationId = operation.id ?? `operation-${index + 1}`;
+    const method = operation.method ?? '';
+    const path = operation.path ?? operation.label ?? operationId;
+    const operationLabel = endpointSignature(operation) || operationId;
+    cells.push(
+      `<object label="${escapeXml(operationLabel)}" archiflowKind="endpoint" archiflowHttpMethod="${escapeXml(method)}" archiflowPath="${escapeXml(path)}">` +
+        `<mxCell id="${cellId('op', `${node.id}-${operationId}`)}" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;strokeWidth=1.5;fontSize=10;fontStyle=1;fillColor=#eef2ff;strokeColor=${kindAccent[node.kind]};align=left;spacingLeft=8;" vertex="1" parent="${id}">` +
+        `<mxGeometry x="${14 + index * (width + ENDPOINT_GAP)}" y="${NODE_HEADER}" width="${width}" height="${ENDPOINT_ROW}" as="geometry" /></mxCell></object>`,
+    );
+  });
+  return cells;
+}
+
 function renderPage(ir: Ir, boxes: Map<string, Box>, zoneBoxes: Box[], options: PageOptions): string {
   const { flow } = options;
   const activeNodes = flow ? new Set(flow.nodeIds) : null;
-  const cells: string[] = ['<mxCell id="0" />', '<mxCell id="1" parent="0" />'];
+  const pageFlows = flow ? [pluginFlow(ir, flow)] : ir.flows.map((candidate) => pluginFlow(ir, candidate));
+  const cells: string[] = [rootCell(pageFlows), '<mxCell id="1" parent="0" />'];
 
   for (const zoneBox of zoneBoxes) {
     const zoneId = zoneBox.id.slice('zone:'.length);
@@ -174,30 +326,28 @@ function renderPage(ir: Ir, boxes: Map<string, Box>, zoneBoxes: Box[], options: 
     if (!box) continue;
     const dimmed = activeNodes !== null && !activeNodes.has(node.id);
     const parent = node.zone ? cellId('zone', node.zone) : '1';
-    cells.push(
-      `<mxCell id="${cellId('n', node.id)}" value="${escapeXml(nodeLabel(node))}" style="${nodeStyle(node, dimmed, options.archimate)}" vertex="1" parent="${parent}">` +
-        `<mxGeometry x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" as="geometry" /></mxCell>`,
-    );
+    cells.push(...nodeCell(node, box, parent, dimmed, options.archimate));
   }
 
-  // En una página de flujo, la etiqueta de cada arista lleva el número de paso:
-  // es lo único que sustituye a la animación en un formato estático.
-  const stepLabels = new Map<string, string[]>();
-  if (flow) {
-    flow.steps.forEach((step, i) => {
-      const existing = stepLabels.get(step.edgeId) ?? [];
+  const visibleFlows = flow ? [flow] : ir.flows;
+  for (const visibleFlow of visibleFlows) {
+    for (const [index, step] of visibleFlow.steps.entries()) {
+      const edge = ir.edges.find((candidate) => candidate.id === step.edgeId);
+      if (!edge) continue;
       const condition = step.condition ? ` [${step.condition}]` : '';
-      existing.push(`${i + 1}. ${step.label}${condition}`);
-      stepLabels.set(step.edgeId, existing);
-    });
+      const lines = flow ? [`${index + 1}. ${step.label}${condition}`] : [step.label];
+      const source = stepCellId(ir, step.from, step.fromOp);
+      const target = stepCellId(ir, step.to, step.toOp);
+      cells.push(
+        `<mxCell id="${cellId('fs', `${visibleFlow.id}-${index + 1}`)}" value="${escapeXml(multilineLabel(lines))}" style="${edgeStyle(edge, false)}" edge="1" parent="1" source="${source}" target="${target}">` +
+          '<mxGeometry relative="1" as="geometry" /></mxCell>',
+      );
+    }
   }
 
-  for (const edge of ir.edges) {
-    const inFlow = flow ? stepLabels.has(edge.id) : true;
-    if (flow && !inFlow) continue; // en una página de flujo, fuera el ruido
-    const lines = flow ? (stepLabels.get(edge.id) ?? []) : edge.labels;
+  for (const edge of ir.edges.filter((candidate) => candidate.declaredOnly)) {
     cells.push(
-      `<mxCell id="${cellId('e', edge.id)}" value="${escapeXml(multilineLabel(lines))}" style="${edgeStyle(edge, false)}" edge="1" parent="1" source="${cellId('n', edge.source)}" target="${cellId('n', edge.target)}">` +
+      `<mxCell id="${cellId('e', edge.id)}" value="${escapeXml(multilineLabel(edge.labels))}" style="${edgeStyle(edge, false)}" edge="1" parent="1" source="${cellId('n', edge.source)}" target="${cellId('n', edge.target)}">` +
         '<mxGeometry relative="1" as="geometry" /></mxCell>',
     );
   }

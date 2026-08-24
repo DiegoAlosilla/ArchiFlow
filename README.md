@@ -40,6 +40,10 @@ response, caché, persistencia y notas. Los flujos se guardan dentro de la pági
 del propio `.drawio` mediante identificadores de objetos, de modo que mover o
 redimensionar el diagrama no rompe la animación.
 
+El botón **GIF** descarga la animación del flujo activo tal como se reproduce
+en el editor: bolita azul para cada request y verde para cada response. La
+codificación ocurre en el navegador y el diagrama no se envía a ningún servicio.
+
 Los recorridos son independientes: al pulsar **Grabar** sobre un flujo que ya
 tiene pasos se crea uno nuevo y el anterior se conserva. Desde **Flujo
 animado** se puede seleccionar cualquier paso y moverlo, reemplazar solamente
@@ -179,7 +183,7 @@ La web animada es el entregable. Los exports existen para compartir con quien no
 
 | Formato | Para qué |
 |---|---|
-| **draw.io** (`.drawio`) | Una página con la topología y **una por flujo, con los pasos numerados**. Traducción honesta de una animación a un formato estático: se pierde el movimiento, se conserva el orden. |
+| **draw.io** (`.drawio`) | Una página con la topología y **una por flujo**. Incluye endpoints internos, contratos OpenAPI y la secuencia ArchiFlow embebida: al abrirlo en nuestra versión de Draw.io se puede editar, reproducir con request/response y exportar a GIF. |
 | **SVG** | Vectorial y autocontenido. Se abre en cualquier sitio, se incrusta en un correo y draw.io también lo importa. |
 | **PNG / JPG** | Rasterizados del SVG a 1×, 2× o 3×, con tema claro u oscuro y fondo opcionalmente transparente. |
 | **GIF animado** | Una vuelta completa del flujo activo con el inspector del paso: params, headers, request/response, propósito y datos utilizados. |

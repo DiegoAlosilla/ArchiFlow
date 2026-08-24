@@ -74,6 +74,15 @@ describe('toDrawio', () => {
     expect([...xml.matchAll(/<diagram /g)]).toHaveLength(2);
   });
 
+  it('embebe flujos editables y animables para la extensión ArchiFlow de Draw.io', async () => {
+    const xml = await toDrawio(ir);
+    expect(xml).toContain('archiflowFlows=');
+    expect(xml).toContain('&quot;fromCellId&quot;:&quot;n-gw&quot;');
+    expect(xml).toContain('&quot;cellId&quot;:&quot;n-svc&quot;');
+    expect(xml).toContain('&quot;requestHeaders&quot;');
+    expect(xml).toContain('id="fs-f-1"');
+  });
+
   it('produce XML que un parser acepta', async () => {
     const xml = await toDrawio(ir);
     // Sin DOM en Node, se comprueba el balance de etiquetas y la ausencia de
@@ -257,6 +266,10 @@ describe('nodos expandidos', () => {
   it('dibuja todas las operaciones en draw.io', async () => {
     const xml = await toDrawio(expanded);
     expect(xml).toContain('POST /v1/cuentas/{id}');
+    expect(xml).toContain('archiflowOpenApi=');
+    expect(xml).toContain('archiflowKind="endpoint"');
+    expect(xml).toContain('id="op-cuentas-listar"');
+    expect(xml).toContain('&quot;cellId&quot;:&quot;op-cuentas-listar&quot;');
     expect(attributesWithRawMarkup(xml)).toEqual([]);
   });
 

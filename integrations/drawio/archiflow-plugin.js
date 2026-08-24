@@ -24,6 +24,7 @@ Draw.loadPlugin(function(ui)
     var recording = false;
     var recordingMode = 'new';
     var playing = false;
+    var exportingGif = false;
     var playTimer = null;
     var playbackPhase = 'request';
     var particleFrame = null;
@@ -139,6 +140,11 @@ Draw.loadPlugin(function(ui)
     function cellFor(step)
     {
         return step != null ? model.getCell(step.cellId) : null;
+    }
+
+    function sourceCellFor(step, fallback)
+    {
+        return step != null && step.fromCellId != null ? model.getCell(step.fromCellId) : fallback;
     }
 
     function isRecordable(cell)
@@ -363,6 +369,283 @@ Draw.loadPlugin(function(ui)
         particleFrame = window.requestAnimationFrame(frame);
     }
 
+    function loadGifEncoder()
+    {
+        if (window.ArchiFlowGif != null)
+        {
+            return Promise.resolve(window.ArchiFlowGif);
+        }
+
+        return new Promise(function(resolve, reject)
+        {
+            var existing = document.querySelector('script[data-archiflow-gif]');
+            var script = existing || document.createElement('script');
+            script.onload = function() { resolve(window.ArchiFlowGif); };
+            script.onerror = function() { reject(new Error('No se pudo cargar el codificador GIF.')); };
+
+            if (existing == null)
+            {
+                script.src = '/archiflow-gif.js';
+                script.setAttribute('data-archiflow-gif', '1');
+                document.head.appendChild(script);
+            }
+        });
+    }
+
+    function gifMovements(flow)
+    {
+        var result = [];
+        var i;
+
+        if (flow.timeline === true)
+        {
+            for (i = 0; i < flow.steps.length; i++)
+            {
+                var timelineStep = flow.steps[i];
+                var timelineEdge = timelineStep.edgeId != null ? model.getCell(timelineStep.edgeId) : null;
+                var timelineFrom = sourceCellFor(timelineStep, null);
+                if (timelineEdge != null && timelineFrom != null)
+                {
+                    result.push({ edge: timelineEdge, from: timelineFrom, phase: timelineStep.direction === 'response' ? 'response' : 'request', step: timelineStep });
+                }
+            }
+            return result;
+        }
+
+        for (i = 0; i < flow.steps.length; i++)
+        {
+            var step = flow.steps[i];
+            var edge = step.edgeId != null ? model.getCell(step.edgeId) : null;
+            var previous = i > 0 ? cellFor(flow.steps[i - 1]) : null;
+            var from = sourceCellFor(step, previous);
+            if (edge != null && from != null)
+            {
+                result.push({ edge: edge, from: from, phase: 'request', step: step });
+            }
+        }
+
+        for (i = flow.steps.length - 1; i >= 0; i--)
+        {
+            var responseStep = flow.steps[i];
+            var responseEdgeId = responseStep.responseEdgeId != null ? responseStep.responseEdgeId : responseStep.edgeId;
+            var responseEdge = responseEdgeId != null ? model.getCell(responseEdgeId) : null;
+            var responseFrom = cellFor(responseStep);
+            if (responseEdge != null && responseFrom != null)
+            {
+                result.push({ edge: responseEdge, from: responseFrom, phase: 'response', step: responseStep });
+            }
+        }
+
+        return result;
+    }
+
+    function svgFrame(movement, progress)
+    {
+        var border = 18;
+        var bounds = graph.getGraphBounds();
+        var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        var width = Math.max(1, Math.ceil(bounds.width + border * 2));
+        var height = Math.max(1, Math.ceil(bounds.height + border * 2));
+        svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        svg.setAttribute('width', String(width));
+        svg.setAttribute('height', String(height));
+        svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+        var background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        background.setAttribute('width', '100%');
+        background.setAttribute('height', '100%');
+        background.setAttribute('fill', '#ffffff');
+        svg.appendChild(background);
+
+        function sx(value) { return value - bounds.x + border; }
+        function sy(value) { return value - bounds.y + border; }
+
+        for (var edgeId in model.cells)
+        {
+            var edgeCell = model.cells[edgeId];
+            if (edgeCell == null || !model.isEdge(edgeCell) || !graph.isCellVisible(edgeCell)) continue;
+            var edgeState = graph.view.getState(edgeCell);
+            if (edgeState == null || edgeState.absolutePoints == null) continue;
+            var commands = [];
+            for (var edgePointIndex = 0; edgePointIndex < edgeState.absolutePoints.length; edgePointIndex++)
+            {
+                var edgePoint = edgeState.absolutePoints[edgePointIndex];
+                if (edgePoint != null) commands.push((commands.length === 0 ? 'M ' : 'L ') + sx(edgePoint.x) + ' ' + sy(edgePoint.y));
+            }
+            if (commands.length < 2) continue;
+            var edgePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            var edgeStyleValues = graph.getCellStyle(edgeCell);
+            edgePath.setAttribute('d', commands.join(' '));
+            edgePath.setAttribute('fill', 'none');
+            edgePath.setAttribute('stroke', edgeStyleValues[mxConstants.STYLE_STROKECOLOR] || '#64748b');
+            edgePath.setAttribute('stroke-width', edgeCell === movement.edge ? '4' : '2');
+            edgePath.setAttribute('stroke-linecap', 'round');
+            edgePath.setAttribute('stroke-linejoin', 'round');
+            if (edgeStyleValues[mxConstants.STYLE_DASHED] === '1') edgePath.setAttribute('stroke-dasharray', '7 5');
+            svg.appendChild(edgePath);
+        }
+
+        for (var vertexId in model.cells)
+        {
+            var vertexCell = model.cells[vertexId];
+            if (vertexCell == null || !model.isVertex(vertexCell) || !graph.isCellVisible(vertexCell)) continue;
+            var vertexState = graph.view.getState(vertexCell);
+            if (vertexState == null || vertexState.width < 6 || vertexState.height < 6) continue;
+            var vertexStyleValues = graph.getCellStyle(vertexCell);
+            var rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rectangle.setAttribute('x', String(sx(vertexState.x)));
+            rectangle.setAttribute('y', String(sy(vertexState.y)));
+            rectangle.setAttribute('width', String(vertexState.width));
+            rectangle.setAttribute('height', String(vertexState.height));
+            rectangle.setAttribute('rx', '8');
+            rectangle.setAttribute('fill', vertexStyleValues[mxConstants.STYLE_FILLCOLOR] || '#ffffff');
+            rectangle.setAttribute('stroke', vertexStyleValues[mxConstants.STYLE_STROKECOLOR] || '#94a3b8');
+            rectangle.setAttribute('stroke-width', '2');
+            svg.appendChild(rectangle);
+
+            var vertexLabel = labelFor(vertexCell);
+            if (vertexLabel !== '')
+            {
+                var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', String(sx(vertexState.x) + 9));
+                text.setAttribute('y', String(sy(vertexState.y) + Math.min(22, vertexState.height / 2 + 4)));
+                text.setAttribute('fill', vertexStyleValues[mxConstants.STYLE_FONTCOLOR] || '#0f172a');
+                text.setAttribute('font-family', 'Arial, sans-serif');
+                text.setAttribute('font-size', vertexState.height < 55 ? '10' : '12');
+                text.setAttribute('font-weight', '600');
+                text.textContent = vertexLabel.length > 58 ? vertexLabel.slice(0, 55) + '…' : vertexLabel;
+                svg.appendChild(text);
+            }
+        }
+        var points = routePoints(movement.edge, movement.from);
+        var overlay = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        var color = movement.phase === 'response' ? '#10b981' : '#6366f1';
+        var label = movement.phase === 'response' ? 'RES' : 'REQ';
+
+        for (var i = 2; i >= 0; i--)
+        {
+            var dot = pointOnRoute(points, Math.max(0, progress - i * .055));
+            if (dot == null) continue;
+            var circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', String(sx(dot.x)));
+            circle.setAttribute('cy', String(sy(dot.y)));
+            circle.setAttribute('r', i === 0 ? '8' : String(5 - i));
+            circle.setAttribute('fill', color);
+            circle.setAttribute('stroke', '#ffffff');
+            circle.setAttribute('stroke-width', i === 0 ? '3' : '1.5');
+            circle.setAttribute('opacity', String(1 - i * .28));
+            overlay.appendChild(circle);
+        }
+
+        var point = pointOnRoute(points, progress);
+        if (point != null)
+        {
+            var badge = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            badge.setAttribute('x', String(sx(point.x) + 13));
+            badge.setAttribute('y', String(sy(point.y) - 10));
+            badge.setAttribute('fill', color);
+            badge.setAttribute('font-family', 'Arial, sans-serif');
+            badge.setAttribute('font-size', '11');
+            badge.setAttribute('font-weight', '700');
+            badge.textContent = label;
+            overlay.appendChild(badge);
+        }
+
+        svg.appendChild(overlay);
+        return svg;
+    }
+
+    function rasterizeSvg(svg)
+    {
+        return new Promise(function(resolve, reject)
+        {
+            var width = Math.max(1, Math.ceil(parseFloat(svg.getAttribute('width')) || 1));
+            var height = Math.max(1, Math.ceil(parseFloat(svg.getAttribute('height')) || 1));
+            var scale = Math.min(1, 1000 / Math.max(width, height));
+            var canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(width * scale));
+            canvas.height = Math.max(1, Math.round(height * scale));
+            var context = canvas.getContext('2d', { willReadFrequently: true });
+            var source = new XMLSerializer().serializeToString(svg);
+            var url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }));
+            var image = new Image();
+            image.onload = function()
+            {
+                context.fillStyle = '#ffffff';
+                context.fillRect(0, 0, canvas.width, canvas.height);
+                context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                URL.revokeObjectURL(url);
+                resolve({ data: context.getImageData(0, 0, canvas.width, canvas.height).data, width: canvas.width, height: canvas.height });
+            };
+            image.onerror = function()
+            {
+                URL.revokeObjectURL(url);
+                reject(new Error('No se pudo convertir el diagrama en un fotograma.'));
+            };
+            image.src = url;
+        });
+    }
+
+    async function exportActiveFlowGif()
+    {
+        var flow = activeFlow();
+        var movements = gifMovements(flow);
+        if (movements.length === 0)
+        {
+            toast('El flujo activo no tiene flechas animables');
+            return;
+        }
+
+        stopPlayback(true);
+        exportingGif = true;
+        renderToolbarState();
+        var originalText = gifButton.textContent;
+
+        try
+        {
+            var encoder = await loadGifEncoder();
+            var frames = [];
+            var dimensions = null;
+            var samples = movements.length > 10 ? 4 : 7;
+            var total = movements.length * samples;
+
+            for (var i = 0; i < movements.length; i++)
+            {
+                for (var frame = 0; frame < samples; frame++)
+                {
+                    gifButton.textContent = 'GIF ' + (frames.length + 1) + '/' + total;
+                    await new Promise(function(resolve) { window.setTimeout(resolve, 0); });
+                    dimensions = await rasterizeSvg(svgFrame(movements[i], frame / (samples - 1)));
+                    frames.push({ data: dimensions.data });
+                }
+            }
+
+            var palette = encoder.buildPalette('#ffffff', ['#0f172a', '#475569', '#6366f1', '#10b981', '#ef4444', '#ffffff']);
+            var bytes = encoder.encodeGif(frames, palette, { width: dimensions.width, height: dimensions.height, delayMs: 150 });
+            var download = document.createElement('a');
+            var blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }));
+            download.href = blobUrl;
+            download.download = (flow.name || 'archiflow').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() + '.gif';
+            document.body.appendChild(download);
+            download.click();
+            document.body.removeChild(download);
+            window.setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 30000);
+            toast('GIF exportado: request y response incluidos');
+        }
+        catch (error)
+        {
+            exportingGif = false;
+            gifButton.textContent = originalText;
+            renderToolbarState();
+            ui.handleError(error);
+        }
+        finally
+        {
+            exportingGif = false;
+            gifButton.textContent = originalText;
+            renderToolbarState();
+        }
+    }
+
     function clearBadges()
     {
         for (var i = 0; i < badges.length; i++)
@@ -494,11 +777,15 @@ Draw.loadPlugin(function(ui)
     {
         activateArchiflowPanel();
     });
+    var gifButton = makeButton('GIF', 'af-btn-ghost', exportActiveFlowGif);
+    gifButton.title = 'Descargar el flujo activo como GIF animado';
+    gifButton.setAttribute('aria-label', 'Exportar GIF animado');
     panelButton.title = 'Abrir la ficha técnica de ArchiFlow';
     toolbar.appendChild(recordButton);
     toolbar.appendChild(playButton);
     toolbar.appendChild(stopButton);
     toolbar.appendChild(undoButton);
+    toolbar.appendChild(gifButton);
     toolbar.appendChild(panelButton);
 
     if (ui.toolbar != null && ui.toolbar.container != null)
@@ -1239,6 +1526,61 @@ Draw.loadPlugin(function(ui)
         }
     }
 
+    function playTimeline(index)
+    {
+        var flow = activeFlow();
+
+        if (index >= flow.steps.length)
+        {
+            stopPlayback();
+            toast('Animación completada');
+            return;
+        }
+
+        if (!playing)
+        {
+            return;
+        }
+
+        removeParticles();
+        for (var j = 0; j < highlights.length; j++) highlights[j].destroy();
+        highlights = [];
+
+        selectedStep = index;
+        var step = flow.steps[index];
+        playbackPhase = step.direction === 'response' ? 'response' : 'request';
+        var cell = cellFor(step);
+        var fromCell = sourceCellFor(step, null);
+        var edge = step.edgeId != null ? model.getCell(step.edgeId) : inferEdge(fromCell, cell);
+
+        if (cell != null)
+        {
+            setOpacity(cell, '1');
+            var highlight = new mxCellHighlight(graph, playbackPhase === 'response' ? '#10b981' : '#6366f1', 6, true);
+            highlight.highlight(graph.view.getState(cell));
+            highlights.push(highlight);
+            graph.scrollCellToVisible(cell);
+        }
+        if (fromCell != null) setOpacity(fromCell, '1');
+        if (edge != null) setOpacity(edge, '1');
+        render();
+
+        function next()
+        {
+            if (!playing) return;
+            playTimer = window.setTimeout(function() { playTimeline(index + 1); }, STEP_DELAY);
+        }
+
+        if (edge != null && fromCell != null)
+        {
+            animateParticle(edge, fromCell, playbackPhase, next);
+        }
+        else
+        {
+            next();
+        }
+    }
+
     function playFlow(index, phase)
     {
         var flow = activeFlow();
@@ -1266,6 +1608,12 @@ Draw.loadPlugin(function(ui)
             }
 
             renderToolbarState();
+
+            if (flow.timeline === true)
+            {
+                playTimeline(0);
+                return;
+            }
         }
 
         if (!playing)
@@ -1282,7 +1630,7 @@ Draw.loadPlugin(function(ui)
             return;
         }
 
-        if (phase === 'response' && index <= 0)
+        if (phase === 'response' && (index < 0 || (index === 0 && flow.steps[0].fromCellId == null)))
         {
             stopPlayback();
             toast('Animación completada');
@@ -1314,12 +1662,15 @@ Draw.loadPlugin(function(ui)
         var playbackEdgeId = phase === 'response' && step.responseEdgeId != null ? step.responseEdgeId : step.edgeId;
         var edge = playbackEdgeId != null ? model.getCell(playbackEdgeId) : null;
 
-        if (edge == null && index > 0)
+        var previousCell = index > 0 ? cellFor(flow.steps[index - 1]) : null;
+        var explicitFromCell = sourceCellFor(step, previousCell);
+
+        if (edge == null && explicitFromCell != null)
         {
-            edge = inferEdge(cellFor(flow.steps[index - 1]), cell);
+            edge = inferEdge(explicitFromCell, cell);
         }
 
-        if (edge != null && index > 0)
+        if (edge != null && explicitFromCell != null)
         {
             setOpacity(edge, '1');
         }
@@ -1339,10 +1690,9 @@ Draw.loadPlugin(function(ui)
             }, STEP_DELAY);
         }
 
-        if (edge != null && index > 0)
+        if (edge != null && explicitFromCell != null)
         {
-            var previousCell = cellFor(flow.steps[index - 1]);
-            animateParticle(edge, phase === 'request' ? previousCell : cell, phase, next);
+            animateParticle(edge, phase === 'request' ? explicitFromCell : cell, phase, next);
         }
         else
         {
@@ -1353,18 +1703,19 @@ Draw.loadPlugin(function(ui)
     function renderToolbarState()
     {
         var steps = activeFlow().steps;
-        recordButton.disabled = playing;
-        playButton.disabled = playing;
-        stopButton.disabled = !playing;
-        undoButton.disabled = playing || recording || steps.length === 0;
-        newFlowButton.disabled = playing || recording;
-        flowSelect.disabled = playing || recording;
-        flowName.disabled = playing || recording;
-        moveStepLeftButton.disabled = playing || recording || selectedStep <= 0;
-        moveStepRightButton.disabled = playing || recording || selectedStep >= steps.length - 1;
-        replaceStepButton.disabled = playing || recording || steps.length === 0;
-        insertStepButton.disabled = playing || recording || steps.length === 0;
-        deleteStepButton.disabled = playing || recording || steps.length === 0;
+        recordButton.disabled = playing || exportingGif;
+        playButton.disabled = playing || exportingGif;
+        stopButton.disabled = !playing || exportingGif;
+        gifButton.disabled = playing || exportingGif || gifMovements(activeFlow()).length === 0;
+        undoButton.disabled = playing || exportingGif || recording || steps.length === 0;
+        newFlowButton.disabled = playing || exportingGif || recording;
+        flowSelect.disabled = playing || exportingGif || recording;
+        flowName.disabled = playing || exportingGif || recording;
+        moveStepLeftButton.disabled = playing || exportingGif || recording || selectedStep <= 0;
+        moveStepRightButton.disabled = playing || exportingGif || recording || selectedStep >= steps.length - 1;
+        replaceStepButton.disabled = playing || exportingGif || recording || steps.length === 0;
+        insertStepButton.disabled = playing || exportingGif || recording || steps.length === 0;
+        deleteStepButton.disabled = playing || exportingGif || recording || steps.length === 0;
     }
 
     function renderFlowOptions()
