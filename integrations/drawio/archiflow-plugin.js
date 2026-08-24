@@ -482,78 +482,204 @@ Draw.loadPlugin(function(ui)
     {
         var border = 18;
         var bounds = graph.getGraphBounds();
-        var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        var width = Math.max(1, Math.ceil(bounds.width + border * 2));
-        var height = Math.max(1, Math.ceil(bounds.height + border * 2));
-        svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        svg.setAttribute('width', String(width));
-        svg.setAttribute('height', String(height));
-        svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
-        var background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        background.setAttribute('width', '100%');
-        background.setAttribute('height', '100%');
-        background.setAttribute('fill', '#ffffff');
-        svg.appendChild(background);
+        var svg = graph.getSvg('#ffffff', 1, border);
+        var viewScale = graph.view.scale || 1;
+        var translate = graph.view.translate || new mxPoint();
+        var modelBoundsX = bounds.x / viewScale - translate.x;
+        var modelBoundsY = bounds.y / viewScale - translate.y;
 
-        function sx(value) { return value - bounds.x + border; }
-        function sy(value) { return value - bounds.y + border; }
+        function sx(value) { return value / viewScale - translate.x - modelBoundsX + border; }
+        function sy(value) { return value / viewScale - translate.y - modelBoundsY + border; }
 
-        for (var edgeId in model.cells)
+        // Los labels HTML de mxGraph usan foreignObject. Aunque se vean bien,
+        // Chromium marca el canvas como cross-origin al rasterizarlos. Se
+        // conservan las formas vectoriales reales y se recrea solamente el
+        // texto con nodos SVG seguros.
+        var unsafe = svg.querySelectorAll('foreignObject,image');
+        for (var unsafeIndex = unsafe.length - 1; unsafeIndex >= 0; unsafeIndex--)
         {
-            var edgeCell = model.cells[edgeId];
-            if (edgeCell == null || !model.isEdge(edgeCell) || !graph.isCellVisible(edgeCell)) continue;
-            var edgeState = graph.view.getState(edgeCell);
-            if (edgeState == null || edgeState.absolutePoints == null) continue;
-            var commands = [];
-            for (var edgePointIndex = 0; edgePointIndex < edgeState.absolutePoints.length; edgePointIndex++)
-            {
-                var edgePoint = edgeState.absolutePoints[edgePointIndex];
-                if (edgePoint != null) commands.push((commands.length === 0 ? 'M ' : 'L ') + sx(edgePoint.x) + ' ' + sy(edgePoint.y));
-            }
-            if (commands.length < 2) continue;
-            var edgePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            var edgeStyleValues = graph.getCellStyle(edgeCell);
-            edgePath.setAttribute('d', commands.join(' '));
-            edgePath.setAttribute('fill', 'none');
-            edgePath.setAttribute('stroke', edgeStyleValues[mxConstants.STYLE_STROKECOLOR] || '#64748b');
-            edgePath.setAttribute('stroke-width', edgeCell === movement.edge ? '4' : '2');
-            edgePath.setAttribute('stroke-linecap', 'round');
-            edgePath.setAttribute('stroke-linejoin', 'round');
-            if (edgeStyleValues[mxConstants.STYLE_DASHED] === '1') edgePath.setAttribute('stroke-dasharray', '7 5');
-            svg.appendChild(edgePath);
+            unsafe[unsafeIndex].parentNode.removeChild(unsafe[unsafeIndex]);
+        }
+        var originalText = svg.querySelectorAll('text');
+        for (var originalTextIndex = originalText.length - 1; originalTextIndex >= 0; originalTextIndex--)
+        {
+            originalText[originalTextIndex].parentNode.removeChild(originalText[originalTextIndex]);
         }
 
-        for (var vertexId in model.cells)
+        var gridSize = Math.max(6, graph.gridSize);
+        var definitions = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        var pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+        pattern.setAttribute('id', 'af-gif-grid');
+        pattern.setAttribute('width', String(gridSize));
+        pattern.setAttribute('height', String(gridSize));
+        pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+        var gridPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        gridPath.setAttribute('d', 'M ' + gridSize + ' 0 L 0 0 0 ' + gridSize);
+        gridPath.setAttribute('fill', 'none');
+        gridPath.setAttribute('stroke', '#e5e7eb');
+        gridPath.setAttribute('stroke-width', '.65');
+        pattern.appendChild(gridPath);
+        definitions.appendChild(pattern);
+        svg.insertBefore(definitions, svg.firstChild);
+        var grid = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        grid.setAttribute('x', '0');
+        grid.setAttribute('y', '0');
+        grid.setAttribute('width', svg.getAttribute('width'));
+        grid.setAttribute('height', svg.getAttribute('height'));
+        grid.setAttribute('fill', 'url(#af-gif-grid)');
+        var backgroundShape = svg.querySelector('rect[fill="#ffffff"],rect[fill="#FFFFFF"]');
+        if (backgroundShape != null && backgroundShape.parentNode != null)
         {
-            var vertexCell = model.cells[vertexId];
-            if (vertexCell == null || !model.isVertex(vertexCell) || !graph.isCellVisible(vertexCell)) continue;
-            var vertexState = graph.view.getState(vertexCell);
-            if (vertexState == null || vertexState.width < 6 || vertexState.height < 6) continue;
-            var vertexStyleValues = graph.getCellStyle(vertexCell);
-            var rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            rectangle.setAttribute('x', String(sx(vertexState.x)));
-            rectangle.setAttribute('y', String(sy(vertexState.y)));
-            rectangle.setAttribute('width', String(vertexState.width));
-            rectangle.setAttribute('height', String(vertexState.height));
-            rectangle.setAttribute('rx', '8');
-            rectangle.setAttribute('fill', vertexStyleValues[mxConstants.STYLE_FILLCOLOR] || '#ffffff');
-            rectangle.setAttribute('stroke', vertexStyleValues[mxConstants.STYLE_STROKECOLOR] || '#94a3b8');
-            rectangle.setAttribute('stroke-width', '2');
-            svg.appendChild(rectangle);
+            backgroundShape.parentNode.insertBefore(grid, backgroundShape.nextSibling);
+        }
+        else
+        {
+            var firstDrawing = svg.querySelector('g');
+            svg.insertBefore(grid, firstDrawing || null);
+        }
 
-            var vertexLabel = labelFor(vertexCell);
-            if (vertexLabel !== '')
+        function linesFor(cell)
+        {
+            var div = document.createElement('div');
+            div.innerHTML = Graph.sanitizeHtml(graph.convertValueToString(cell) || '');
+            var breaks = div.getElementsByTagName('br');
+            while (breaks.length > 0)
             {
-                var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                text.setAttribute('x', String(sx(vertexState.x) + 9));
-                text.setAttribute('y', String(sy(vertexState.y) + Math.min(22, vertexState.height / 2 + 4)));
-                text.setAttribute('fill', vertexStyleValues[mxConstants.STYLE_FONTCOLOR] || '#0f172a');
-                text.setAttribute('font-family', 'Arial, sans-serif');
-                text.setAttribute('font-size', vertexState.height < 55 ? '10' : '12');
-                text.setAttribute('font-weight', '600');
-                text.textContent = vertexLabel.length > 58 ? vertexLabel.slice(0, 55) + '…' : vertexLabel;
-                svg.appendChild(text);
+                breaks[0].parentNode.replaceChild(document.createTextNode('\n'), breaks[0]);
             }
+            return (div.textContent || div.innerText || '').split(/\n+/).map(function(line)
+            {
+                return line.replace(/\s+/g, ' ').trim();
+            }).filter(Boolean);
+        }
+
+        function exportedVertexRect(cell, state)
+        {
+            var geometry = model.getGeometry(cell);
+            if (geometry == null || geometry.relative)
+            {
+                return {
+                    x: sx(state.x), y: sy(state.y),
+                    width: state.width / viewScale, height: state.height / viewScale
+                };
+            }
+
+            var x = geometry.x;
+            var y = geometry.y;
+            var parent = model.getParent(cell);
+            while (parent != null && model.isVertex(parent))
+            {
+                var parentGeometry = model.getGeometry(parent);
+                if (parentGeometry != null)
+                {
+                    x += parentGeometry.x;
+                    y += parentGeometry.y;
+                }
+                parent = model.getParent(parent);
+            }
+            return {
+                x: x - modelBoundsX + border,
+                y: y - modelBoundsY + border,
+                width: geometry.width,
+                height: geometry.height
+            };
+        }
+
+        function appendText(cell, rect, styleValues)
+        {
+            var lines = linesFor(cell);
+            if (lines.length === 0) return;
+            var baseSize = Math.max(7, parseFloat(styleValues[mxConstants.STYLE_FONTSIZE] || '12'));
+            var lineSizes = [];
+            var totalHeight = 0;
+            for (var lineIndex = 0; lineIndex < lines.length; lineIndex++)
+            {
+                var smaller = lines.length > 1 && lineIndex === lines.length - 1;
+                var currentSize = smaller ? Math.max(6, baseSize * .72) : baseSize;
+                lineSizes.push(currentSize);
+                totalHeight += currentSize * 1.18;
+            }
+            var align = styleValues[mxConstants.STYLE_ALIGN] || mxConstants.ALIGN_CENTER;
+            var vertical = styleValues[mxConstants.STYLE_VERTICAL_ALIGN] || mxConstants.ALIGN_MIDDLE;
+            var spacingLeft = parseFloat(styleValues[mxConstants.STYLE_SPACING_LEFT] || '4');
+            var spacingTop = parseFloat(styleValues[mxConstants.STYLE_SPACING_TOP] || '4');
+            var x = align === mxConstants.ALIGN_LEFT ? rect.x + spacingLeft + 3 :
+                (align === mxConstants.ALIGN_RIGHT ? rect.x + rect.width - spacingLeft - 3 : rect.x + rect.width / 2);
+            var textAnchor = align === mxConstants.ALIGN_LEFT ? 'start' : (align === mxConstants.ALIGN_RIGHT ? 'end' : 'middle');
+            var y = vertical === mxConstants.ALIGN_TOP ? rect.y + spacingTop + lineSizes[0] :
+                rect.y + (rect.height - totalHeight) / 2 + lineSizes[0];
+            var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', String(x));
+            text.setAttribute('y', String(y));
+            text.setAttribute('text-anchor', textAnchor);
+            text.setAttribute('fill', styleValues[mxConstants.STYLE_FONTCOLOR] || '#111827');
+            text.setAttribute('font-family', styleValues[mxConstants.STYLE_FONTFAMILY] || 'Arial, sans-serif');
+            text.setAttribute('font-weight', (parseInt(styleValues[mxConstants.STYLE_FONTSTYLE] || '0', 10) & mxConstants.FONT_BOLD) !== 0 ? '700' : '400');
+            for (var tspanIndex = 0; tspanIndex < lines.length; tspanIndex++)
+            {
+                var tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+                tspan.setAttribute('x', String(x));
+                tspan.setAttribute('font-size', String(lineSizes[tspanIndex]));
+                if (tspanIndex > 0) tspan.setAttribute('dy', String(lineSizes[tspanIndex - 1] * 1.18));
+                tspan.textContent = lines[tspanIndex];
+                text.appendChild(tspan);
+            }
+            svg.appendChild(text);
+        }
+
+        for (var cellId in model.cells)
+        {
+            var renderCell = model.cells[cellId];
+            if (renderCell == null || !graph.isCellVisible(renderCell)) continue;
+            var renderState = graph.view.getState(renderCell);
+            if (renderState == null) continue;
+            var renderStyle = graph.getCellStyle(renderCell);
+            if (model.isVertex(renderCell) && renderState.width >= 6 && renderState.height >= 6)
+            {
+                appendText(renderCell, exportedVertexRect(renderCell, renderState), renderStyle);
+            }
+            else if (model.isEdge(renderCell) && labelFor(renderCell) !== '')
+            {
+                var edgeText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                edgeText.setAttribute('x', String(sx(renderState.x + renderState.width / 2)));
+                edgeText.setAttribute('y', String(sy(renderState.y + renderState.height / 2) + 3));
+                edgeText.setAttribute('text-anchor', 'middle');
+                edgeText.setAttribute('fill', renderStyle[mxConstants.STYLE_FONTCOLOR] || '#111827');
+                edgeText.setAttribute('font-family', renderStyle[mxConstants.STYLE_FONTFAMILY] || 'Arial, sans-serif');
+                edgeText.setAttribute('font-size', String(Math.max(6, parseFloat(renderStyle[mxConstants.STYLE_FONTSIZE] || '10'))));
+                edgeText.setAttribute('paint-order', 'stroke');
+                edgeText.setAttribute('stroke', '#ffffff');
+                edgeText.setAttribute('stroke-width', '4');
+                edgeText.textContent = labelFor(renderCell);
+                svg.appendChild(edgeText);
+            }
+        }
+
+        var badgeSteps = activeFlow().steps;
+        for (var badgeIndex = 0; badgeIndex < badgeSteps.length; badgeIndex++)
+        {
+            var badgeCell = cellFor(badgeSteps[badgeIndex]);
+            var badgeState = badgeCell != null ? graph.view.getState(badgeCell) : null;
+            if (badgeState == null) continue;
+            var badgeRect = exportedVertexRect(badgeCell, badgeState);
+            var badgeCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            badgeCircle.setAttribute('cx', String(badgeRect.x + badgeRect.width - 2));
+            badgeCircle.setAttribute('cy', String(badgeRect.y + 2));
+            badgeCircle.setAttribute('r', '8');
+            badgeCircle.setAttribute('fill', '#4f46e5');
+            badgeCircle.setAttribute('stroke', '#ffffff');
+            badgeCircle.setAttribute('stroke-width', '2');
+            svg.appendChild(badgeCircle);
+            var badgeText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            badgeText.setAttribute('x', badgeCircle.getAttribute('cx'));
+            badgeText.setAttribute('y', String(parseFloat(badgeCircle.getAttribute('cy')) + 3));
+            badgeText.setAttribute('text-anchor', 'middle');
+            badgeText.setAttribute('fill', '#ffffff');
+            badgeText.setAttribute('font-family', 'Arial, sans-serif');
+            badgeText.setAttribute('font-size', '8');
+            badgeText.setAttribute('font-weight', '700');
+            badgeText.textContent = String(badgeIndex + 1);
+            svg.appendChild(badgeText);
         }
         var points = routePoints(movement.edge, movement.from);
         var overlay = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -662,12 +788,16 @@ Draw.loadPlugin(function(ui)
             var bytes = encoder.encodeGif(frames, palette, { width: dimensions.width, height: dimensions.height, delayMs: 75 });
             var download = document.createElement('a');
             var blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }));
+            showGifPreview(blobUrl);
             download.href = blobUrl;
             download.download = (flow.name || 'archiflow').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() + '.gif';
             document.body.appendChild(download);
             download.click();
             document.body.removeChild(download);
-            window.setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 30000);
+            window.setTimeout(function()
+            {
+                URL.revokeObjectURL(blobUrl);
+            }, 300000);
             toast('GIF exportado: request y response incluidos');
         }
         catch (error)
@@ -756,6 +886,30 @@ Draw.loadPlugin(function(ui)
         return button;
     }
 
+    function showGifPreview(url)
+    {
+        var previous = document.getElementById('af-gif-preview');
+        if (previous != null && previous.parentNode != null) previous.parentNode.removeChild(previous);
+        var preview = h('div', 'af-gif-preview');
+        preview.id = 'af-gif-preview';
+        var previewHead = h('div', 'af-gif-preview-head');
+        previewHead.appendChild(h('span', '', 'Vista previa del GIF'));
+        var close = h('button', '', '×');
+        close.type = 'button';
+        close.title = 'Cerrar vista previa';
+        previewHead.appendChild(close);
+        var image = document.createElement('img');
+        image.src = url;
+        image.alt = 'Vista previa del flujo ArchiFlow animado';
+        preview.appendChild(previewHead);
+        preview.appendChild(image);
+        document.body.appendChild(preview);
+        mxEvent.addListener(close, 'click', function()
+        {
+            if (preview.parentNode != null) preview.parentNode.removeChild(preview);
+        });
+    }
+
     var style = document.createElement('style');
     style.type = 'text/css';
     style.textContent = [
@@ -793,7 +947,8 @@ Draw.loadPlugin(function(ui)
         '.af-live-card{border:1px solid light-dark(#dbe2ea,#374151);border-radius:11px;padding:10px;margin-top:9px;background:light-dark(#fff,#202226)}.af-live-card.af-current-request{border-color:#818cf8}.af-live-card.af-current-response{border-color:#34d399}.af-live-card-title{font-size:10px;font-weight:850;letter-spacing:.7px;text-transform:uppercase;margin-bottom:7px}.af-live-card-request .af-live-card-title{color:#6366f1}.af-live-card-response .af-live-card-title{color:#10b981}.af-live-empty{font-size:11px;color:light-dark(#94a3b8,#9ca3af);font-style:italic}',
         '.af-flow-particle{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;pointer-events:none;z-index:10025;box-sizing:border-box}.af-particle-request{background:#6366f1;border:2px solid #fff;box-shadow:0 0 0 4px rgba(99,102,241,.2),0 0 15px rgba(99,102,241,.9)}.af-particle-response{background:#10b981;border:2px solid #fff;box-shadow:0 0 0 4px rgba(16,185,129,.2),0 0 15px rgba(16,185,129,.9)}.af-particle-trail{width:8px;height:8px;margin:-4px 0 0 -4px;border-width:1px}.af-particle-head:after{content:attr(data-label);position:absolute;left:17px;top:-5px;padding:2px 4px;border-radius:4px;background:#0f172a;color:#fff;font:700 9px/1.2 Arial,sans-serif;letter-spacing:.3px;box-shadow:0 2px 5px rgba(0,0,0,.25)}',
         '.af-recording{animation:afPulse 1.1s ease-in-out infinite;background:#ef4444!important;color:#fff!important}@keyframes afPulse{50%{opacity:.65}}',
-        '.af-toast{position:fixed;left:50%;top:100px;transform:translateX(-50%);z-index:10030;padding:10px 14px;border-radius:9px;background:#111827;color:#fff;font:600 12px Arial,sans-serif;box-shadow:0 8px 25px rgba(0,0,0,.25)}'
+        '.af-toast{position:fixed;left:50%;top:100px;transform:translateX(-50%);z-index:10030;padding:10px 14px;border-radius:9px;background:#111827;color:#fff;font:600 12px Arial,sans-serif;box-shadow:0 8px 25px rgba(0,0,0,.25)}',
+        '.af-gif-preview{position:fixed;left:18px;bottom:18px;z-index:10035;width:min(680px,calc(100vw - 410px));min-width:420px;border:1px solid #94a3b8;border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 18px 48px rgba(15,23,42,.32)}.af-gif-preview-head{height:34px;padding:0 8px 0 12px;display:flex;align-items:center;justify-content:space-between;background:#0f172a;color:#fff;font:700 11px Arial,sans-serif}.af-gif-preview-head button{width:25px;height:25px;border:0;border-radius:5px;background:transparent;color:#fff;font-size:19px;line-height:20px;cursor:pointer}.af-gif-preview-head button:hover{background:#334155}.af-gif-preview img{display:block;width:100%;height:auto;max-height:56vh;object-fit:contain;background:#fff}'
     ].join('\n');
     document.head.appendChild(style);
 

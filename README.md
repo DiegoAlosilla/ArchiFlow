@@ -43,6 +43,8 @@ redimensionar el diagrama no rompe la animación.
 El botón **GIF** descarga la animación del flujo activo tal como se reproduce
 en el editor: bolita azul para cada request y verde para cada response. La
 codificación ocurre en el navegador y el diagrama no se envía a ningún servicio.
+La vista previa reutiliza el SVG real de Draw.io —formas UML, cuadrícula,
+tipografía, colores, etiquetas y badges— para que el GIF coincida con el lienzo.
 
 Los recorridos son independientes: al pulsar **Grabar** sobre un flujo que ya
 tiene pasos se crea uno nuevo y el anterior se conserva. Desde **Flujo
