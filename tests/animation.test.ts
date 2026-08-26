@@ -123,6 +123,34 @@ describe('GIF', () => {
     expect(gif.at(-1)).toBe(0x3b);
   });
 
+  it('respeta el número de repeticiones solicitado por el exportador', () => {
+    const palette = buildPalette('#060910', ['#e2e8f0']);
+    const gif = encodeGif([frame(0)], palette, { width, height, delayMs: 60, repeat: 3 });
+    const marker = String.fromCharCode(...gif).indexOf('NETSCAPE2.0');
+
+    expect(marker).toBeGreaterThan(-1);
+    expect([gif[marker + 13], gif[marker + 14]]).toEqual([3, 0]);
+  });
+
+  it('activa el índice transparente cuando se solicita', () => {
+    const palette = buildPalette('#ffffff', ['#e2e8f0']);
+    const transparentFrame = frame(0);
+    transparentFrame.data[3] = 0;
+    const gif = encodeGif([transparentFrame], palette, {
+      width,
+      height,
+      delayMs: 60,
+      transparent: true,
+    });
+    const control = [...gif].findIndex(
+      (byte, index) => byte === 0x21 && gif[index + 1] === 0xf9 && gif[index + 2] === 0x04,
+    );
+
+    expect(control).toBeGreaterThan(-1);
+    expect(gif[control + 3]! & 1).toBe(1);
+    expect(gif[control + 6]).toBe(0);
+  });
+
   it('la paleta parte del fondo y no se pasa de 256 colores', () => {
     const palette = buildPalette('#060910', ['#e2e8f0', '#7c8aa5']);
     expect(palette[0]).toEqual([6, 9, 16]);

@@ -3,7 +3,6 @@ import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { buildSync } from 'esbuild';
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const runtimeRoot = join(repoRoot, '.drawio-runtime');
@@ -11,8 +10,6 @@ const webRoot = join(runtimeRoot, 'src', 'main', 'webapp');
 const yamlBrowserRoot = join(repoRoot, 'node_modules', 'yaml', 'browser');
 const upstreamPlugin = join(webRoot, 'plugins', 'animation.js');
 const archiflowPlugin = join(repoRoot, 'integrations', 'drawio', 'archiflow-plugin.js');
-const gifBrowserEntry = join(repoRoot, 'integrations', 'drawio', 'gif-browser-entry.ts');
-const gifBrowserBundle = join(webRoot, 'archiflow-gif.js');
 const marker = '/* ARCHIFLOW_DRAWIO_PLUGIN */';
 const host = '127.0.0.1';
 const port = Number(process.env.ARCHIFLOW_DRAWIO_PORT || 4130);
@@ -43,16 +40,6 @@ function ensureRuntime() {
   const extension = readFileSync(archiflowPlugin, 'utf8');
   writeFileSync(upstreamPlugin, `${original.stdout.trimEnd()}\n\n${marker}\n${extension}\n`, 'utf8');
 
-  buildSync({
-    entryPoints: [gifBrowserEntry],
-    outfile: gifBrowserBundle,
-    bundle: true,
-    format: 'iife',
-    globalName: 'ArchiFlowGif',
-    platform: 'browser',
-    target: ['es2018'],
-    minify: true,
-  });
 }
 
 const mime = {

@@ -18,7 +18,8 @@ Draw.loadPlugin(function(ui)
     var model = graph.getModel();
     var STORE_ATTRIBUTE = 'archiflowFlows';
     var STEP_DELAY = 150;
-    var PARTICLE_DURATION = 850;
+    var PARTICLE_SPEED = 190;
+    var PARTICLE_TRAIL_GAP = 12;
     var store = null;
     var selectedStep = 0;
     var recording = false;
@@ -29,10 +30,10 @@ Draw.loadPlugin(function(ui)
     var playbackPhase = 'request';
     var particleFrame = null;
     var particles = [];
-    var highlights = [];
     var badges = [];
     var panelMode = 'contract';
-    var selectedContractComponentId = null;
+    var selectedContractCellId = null;
+    var flowHistory = {};
 
     function uid(prefix)
     {
@@ -67,7 +68,49 @@ Draw.loadPlugin(function(ui)
     function emptyStore()
     {
         var flow = { id: uid('flow'), name: 'Nuevo flujo', steps: [] };
-        return { version: 1, activeFlowId: flow.id, flows: [flow] };
+        return { version: 2, activeFlowId: flow.id, flows: [flow], activeContractId: null, contracts: [] };
+    }
+
+    function normalizeStore()
+    {
+        store.version = 2;
+        store.contracts = Array.isArray(store.contracts) ? store.contracts : [];
+        store.activeContractId = store.activeContractId || null;
+
+        if (store.contracts.length === 0)
+        {
+            for (var cellId in model.cells)
+            {
+                if (!Object.prototype.hasOwnProperty.call(model.cells, cellId)) continue;
+                var legacyCell = model.cells[cellId];
+                var legacyRaw = legacyCell != null ? graph.getAttributeForCell(legacyCell, 'archiflowOpenApi', null) : null;
+
+                if (legacyRaw == null) continue;
+
+                try
+                {
+                    var legacyContract = JSON.parse(legacyRaw);
+                    var legacyInfo = legacyContract.info || {};
+                    var legacyId = 'contract-legacy-' + legacyCell.id;
+                    store.contracts.push({
+                        id: legacyId,
+                        name: legacyInfo.title || labelFor(legacyCell),
+                        fileName: graph.getAttributeForCell(legacyCell, 'archiflowContractFile', 'openapi'),
+                        document: legacyContract
+                    });
+                    if (store.activeContractId == null) store.activeContractId = legacyId;
+                }
+                catch (ignored)
+                {
+                    // El contrato legado queda disponible en la figura para poder reimportarlo.
+                }
+            }
+        }
+
+        if (store.activeContractId == null && store.contracts.length > 0)
+        {
+            store.activeContractId = store.contracts[0].id;
+        }
     }
 
     function activeFlow()
@@ -103,6 +146,8 @@ Draw.loadPlugin(function(ui)
             ui.handleError(e);
         }
 
+        normalizeStore();
+
         selectedStep = Math.max(0, Math.min(selectedStep, activeFlow().steps.length - 1));
     }
 
@@ -115,6 +160,294 @@ Draw.loadPlugin(function(ui)
         {
             ui.editor.setStatus(status);
         }
+    }
+
+    function cloneSteps(steps)
+    {
+        return JSON.parse(JSON.stringify(steps || []));
+    }
+
+    function historyForFlow(flow)
+    {
+        if (flowHistory[flow.id] == null)
+        {
+            flowHistory[flow.id] = { past: [], future: [] };
+        }
+
+        return flowHistory[flow.id];
+    }
+
+    function snapshotFlow(flow)
+    {
+        return { steps: cloneSteps(flow.steps), selectedStep: selectedStep };
+    }
+
+    function rememberFlow(flow)
+    {
+        var history = historyForFlow(flow);
+        history.past.push(snapshotFlow(flow));
+
+        if (history.past.length > 100)
+        {
+            history.past.shift();
+        }
+
+        history.future = [];
+    }
+
+    function restoreFlowSnapshot(flow, snapshot)
+    {
+        flow.steps = cloneSteps(snapshot.steps);
+        selectedStep = Math.max(0, Math.min(snapshot.selectedStep, flow.steps.length - 1));
+        reconnectSteps(flow);
+        saveStore('Historial de la animación actualizado');
+        refreshBadges();
+        render();
+    }
+
+    function undoFlowChange()
+    {
+        var flow = activeFlow();
+        var history = historyForFlow(flow);
+
+        if (history.past.length === 0)
+        {
+            toast('No hay cambios de animación para deshacer');
+            return;
+        }
+
+        history.future.push(snapshotFlow(flow));
+        restoreFlowSnapshot(flow, history.past.pop());
+        toast('Último cambio de animación deshecho');
+    }
+
+    function redoFlowChange()
+    {
+        var flow = activeFlow();
+        var history = historyForFlow(flow);
+
+        if (history.future.length === 0)
+        {
+            toast('No hay cambios de animación para rehacer');
+            return;
+        }
+
+        history.past.push(snapshotFlow(flow));
+        restoreFlowSnapshot(flow, history.future.pop());
+        toast('Cambio de animación recuperado');
+    }
+
+    function contractById(contractId)
+    {
+        var contracts = store != null && Array.isArray(store.contracts) ? store.contracts : [];
+
+        for (var i = 0; i < contracts.length; i++)
+        {
+            if (contracts[i].id === contractId) return contracts[i];
+        }
+
+        return null;
+    }
+
+    function activeContract()
+    {
+        var contract = contractById(store != null ? store.activeContractId : null);
+
+        if (contract == null && store != null && store.contracts.length > 0)
+        {
+            contract = store.contracts[0];
+            store.activeContractId = contract.id;
+        }
+
+        return contract;
+    }
+
+    function selectedContractCell()
+    {
+        var cell = selectedContractCellId != null ? model.getCell(selectedContractCellId) : graph.getSelectionCell();
+        return cell != null && model.isVertex(cell) ? cell : null;
+    }
+
+    function descriptorKey(descriptor)
+    {
+        return descriptor.method + ' ' + descriptor.path;
+    }
+
+    function cellBindings(cell)
+    {
+        if (cell == null) return [];
+        var raw = graph.getAttributeForCell(cell, 'archiflowEndpointBindings', null);
+
+        try
+        {
+            var parsed = raw != null ? JSON.parse(raw) : [];
+            return Array.isArray(parsed) ? parsed : [];
+        }
+        catch (ignored)
+        {
+            return [];
+        }
+    }
+
+    function bindingMatches(binding, contractId, descriptor)
+    {
+        return binding != null && binding.contractId === contractId &&
+            binding.method === descriptor.method && binding.path === descriptor.path;
+    }
+
+    function isCellBoundTo(cell, contractId, descriptor)
+    {
+        var bindings = cellBindings(cell);
+
+        for (var i = 0; i < bindings.length; i++)
+        {
+            if (bindingMatches(bindings[i], contractId, descriptor)) return true;
+        }
+
+        return false;
+    }
+
+    function bindingCount(contractId, descriptor)
+    {
+        var count = 0;
+
+        for (var cellId in model.cells)
+        {
+            if (Object.prototype.hasOwnProperty.call(model.cells, cellId) &&
+                isCellBoundTo(model.cells[cellId], contractId, descriptor)) count++;
+        }
+
+        return count;
+    }
+
+    function setCellBindings(cell, bindings)
+    {
+        graph.setAttributeForCell(cell, 'archiflowEndpointBindings', JSON.stringify(bindings));
+        var primary = bindings.length > 0 ? bindings[0] : null;
+        graph.setAttributeForCell(cell, 'archiflowContractId', primary != null ? primary.contractId : '');
+        graph.setAttributeForCell(cell, 'archiflowContractEndpoint', primary != null ? '1' : '0');
+        graph.setAttributeForCell(cell, 'archiflowHttpMethod', primary != null ? primary.method : '');
+        graph.setAttributeForCell(cell, 'archiflowPath', primary != null ? primary.path : '');
+        graph.setAttributeForCell(cell, 'archiflowOperationId', primary != null ? primary.operationId : '');
+    }
+
+    function descriptorLines(parameters, location)
+    {
+        var lines = [];
+
+        for (var i = 0; i < parameters.length; i++)
+        {
+            if ((parameters[i].in || 'query') === location)
+            {
+                lines.push(parameters[i].name + '=' + schemaText(parameters[i].schema));
+            }
+        }
+
+        return lines.join('\n');
+    }
+
+    function bodySchemaLines(content)
+    {
+        var lines = [];
+        content = content || {};
+
+        for (var type in content)
+        {
+            if (Object.prototype.hasOwnProperty.call(content, type))
+            {
+                lines.push(type + ' · ' + schemaText(content[type].schema));
+            }
+        }
+
+        return lines.join('\n');
+    }
+
+    function applyContractDescriptorToStep(step, descriptor)
+    {
+        var operation = descriptor.operation || {};
+        var parameters = operation.parameters || [];
+        var responses = operation.responses || {};
+        var responseStatuses = Object.keys(responses);
+        step.operation = descriptor.method + ' ' + descriptor.path;
+        step.protocol = 'REST';
+        if (!step.purpose) step.purpose = operation.summary || operation.description || operation.operationId || '';
+        if (!step.pathParams) step.pathParams = descriptorLines(parameters, 'path');
+        if (!step.queryParams) step.queryParams = descriptorLines(parameters, 'query');
+        if (!step.requestHeaders) step.requestHeaders = descriptorLines(parameters, 'header');
+        if (!step.requestBody && operation.requestBody != null) step.requestBody = bodySchemaLines(operation.requestBody.content);
+        if (!step.responseStatus && responseStatuses.length > 0) step.responseStatus = responseStatuses[0];
+
+        if (!step.responseBody)
+        {
+            var responseLines = [];
+            for (var i = 0; i < responseStatuses.length; i++)
+            {
+                var response = responses[responseStatuses[i]] || {};
+                var schemas = bodySchemaLines(response.content);
+                responseLines.push(responseStatuses[i] + (schemas ? ' · ' + schemas : ' · ' + (response.description || 'Respuesta')));
+            }
+            step.responseBody = responseLines.join('\n');
+        }
+    }
+
+    function toggleEndpointBinding(contractRecord, descriptor)
+    {
+        var cell = selectedContractCell();
+
+        if (cell == null)
+        {
+            toast('Selecciona cualquier figura del diagrama para enlazarla');
+            return;
+        }
+
+        var bindings = cellBindings(cell);
+        var existingIndex = -1;
+
+        for (var i = 0; i < bindings.length; i++)
+        {
+            if (bindingMatches(bindings[i], contractRecord.id, descriptor)) existingIndex = i;
+        }
+
+        model.beginUpdate();
+        try
+        {
+            if (existingIndex >= 0)
+            {
+                bindings.splice(existingIndex, 1);
+            }
+            else
+            {
+                bindings.push({
+                    contractId: contractRecord.id,
+                    method: descriptor.method,
+                    path: descriptor.path,
+                    operationId: descriptor.operation.operationId || descriptorKey(descriptor),
+                    summary: descriptor.operation.summary || ''
+                });
+            }
+
+            setCellBindings(cell, bindings);
+        }
+        finally
+        {
+            model.endUpdate();
+        }
+
+        if (existingIndex < 0)
+        {
+            for (var flowIndex = 0; flowIndex < store.flows.length; flowIndex++)
+            {
+                var steps = store.flows[flowIndex].steps || [];
+                for (var stepIndex = 0; stepIndex < steps.length; stepIndex++)
+                {
+                    if (steps[stepIndex].cellId === cell.id) applyContractDescriptorToStep(steps[stepIndex], descriptor);
+                }
+            }
+        }
+
+        saveStore(existingIndex >= 0 ? 'Endpoint desenlazado' : 'Endpoint enlazado');
+        render();
+        toast(existingIndex >= 0 ? 'Enlace eliminado de ' + labelFor(cell) : 'Endpoint enlazado a ' + labelFor(cell));
     }
 
     function labelFor(cell)
@@ -203,41 +536,8 @@ Draw.loadPlugin(function(ui)
         return null;
     }
 
-    function setOpacity(cell, value)
-    {
-        var state = graph.view.getState(cell);
-
-        if (state != null)
-        {
-            if (state.shape != null && state.shape.node != null)
-            {
-                state.shape.node.style.opacity = value;
-            }
-
-            if (state.text != null && state.text.node != null)
-            {
-                state.text.node.style.opacity = value;
-            }
-        }
-    }
-
     function restoreCanvas()
     {
-        for (var id in model.cells)
-        {
-            if (Object.prototype.hasOwnProperty.call(model.cells, id))
-            {
-                setOpacity(model.cells[id], '');
-            }
-        }
-
-        for (var i = 0; i < highlights.length; i++)
-        {
-            highlights[i].destroy();
-        }
-
-        highlights = [];
-
         removeParticles();
     }
 
@@ -350,6 +650,20 @@ Draw.loadPlugin(function(ui)
         return points[points.length - 1];
     }
 
+    function routeLength(points)
+    {
+        var total = 0;
+
+        for (var i = 1; i < points.length; i++)
+        {
+            var dx = points[i].x - points[i - 1].x;
+            var dy = points[i].y - points[i - 1].y;
+            total += Math.sqrt(dx * dx + dy * dy);
+        }
+
+        return total;
+    }
+
     function animateParticle(edge, fromCell, phase, done)
     {
         removeParticles();
@@ -360,6 +674,17 @@ Draw.loadPlugin(function(ui)
             done();
             return;
         }
+
+        var totalLength = routeLength(points);
+
+        if (totalLength <= 0)
+        {
+            done();
+            return;
+        }
+
+        var duration = totalLength / PARTICLE_SPEED * 1000;
+        var trailGap = PARTICLE_TRAIL_GAP / totalLength;
 
         for (var i = 0; i < 3; i++)
         {
@@ -379,18 +704,18 @@ Draw.loadPlugin(function(ui)
                 return;
             }
 
-            var progress = Math.min(1, (now - started) / PARTICLE_DURATION);
+            var progress = Math.min(1, (now - started) / duration);
 
             for (var j = 0; j < particles.length; j++)
             {
-                var dotProgress = Math.max(0, progress - j * .045);
+                var dotProgress = Math.max(0, progress - j * trailGap);
                 var point = pointOnRoute(points, dotProgress);
 
                 if (point != null)
                 {
                     particles[j].style.left = point.x + 'px';
                     particles[j].style.top = point.y + 'px';
-                    particles[j].style.opacity = progress < j * .045 ? '0' : String(1 - j * .27);
+                    particles[j].style.opacity = progress < j * trailGap ? '0' : String(1 - j * .27);
                 }
             }
 
@@ -406,29 +731,6 @@ Draw.loadPlugin(function(ui)
         }
 
         particleFrame = window.requestAnimationFrame(frame);
-    }
-
-    function loadGifEncoder()
-    {
-        if (window.ArchiFlowGif != null)
-        {
-            return Promise.resolve(window.ArchiFlowGif);
-        }
-
-        return new Promise(function(resolve, reject)
-        {
-            var existing = document.querySelector('script[data-archiflow-gif]');
-            var script = existing || document.createElement('script');
-            script.onload = function() { resolve(window.ArchiFlowGif); };
-            script.onerror = function() { reject(new Error('No se pudo cargar el codificador GIF.')); };
-
-            if (existing == null)
-            {
-                script.src = '/archiflow-gif.js';
-                script.setAttribute('data-archiflow-gif', '1');
-                document.head.appendChild(script);
-            }
-        });
     }
 
     function gifMovements(flow)
@@ -478,18 +780,27 @@ Draw.loadPlugin(function(ui)
         return result;
     }
 
-    function svgFrame(movement, progress)
+    function gifBackground(options)
     {
-        var border = 18;
+        var value = options != null ? options.background : null;
+        return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff';
+    }
+
+    function svgFrame(movement, progress, options)
+    {
+        options = options || {};
+        var exportScale = options.scale > 0 ? options.scale : 1;
+        var border = options.border != null ? Math.max(0, options.border) : 18;
         var bounds = graph.getGraphBounds();
-        var svg = graph.getSvg('#ffffff', 1, border);
+        var background = gifBackground(options);
+        var svg = graph.getSvg(options.transparent ? null : background, exportScale, border);
         var viewScale = graph.view.scale || 1;
         var translate = graph.view.translate || new mxPoint();
         var modelBoundsX = bounds.x / viewScale - translate.x;
         var modelBoundsY = bounds.y / viewScale - translate.y;
 
-        function sx(value) { return value / viewScale - translate.x - modelBoundsX + border; }
-        function sy(value) { return value / viewScale - translate.y - modelBoundsY + border; }
+        function sx(value) { return (value / viewScale - translate.x - modelBoundsX) * exportScale + border; }
+        function sy(value) { return (value / viewScale - translate.y - modelBoundsY) * exportScale + border; }
 
         // Los labels HTML de mxGraph usan foreignObject. Aunque se vean bien,
         // Chromium marca el canvas como cross-origin al rasterizarlos. Se
@@ -506,7 +817,7 @@ Draw.loadPlugin(function(ui)
             originalText[originalTextIndex].parentNode.removeChild(originalText[originalTextIndex]);
         }
 
-        var gridSize = Math.max(6, graph.gridSize);
+        var gridSize = Math.max(6, graph.gridSize * exportScale);
         var definitions = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
         var pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
         pattern.setAttribute('id', 'af-gif-grid');
@@ -560,7 +871,8 @@ Draw.loadPlugin(function(ui)
             {
                 return {
                     x: sx(state.x), y: sy(state.y),
-                    width: state.width / viewScale, height: state.height / viewScale
+                    width: state.width / viewScale * exportScale,
+                    height: state.height / viewScale * exportScale
                 };
             }
 
@@ -578,10 +890,10 @@ Draw.loadPlugin(function(ui)
                 parent = model.getParent(parent);
             }
             return {
-                x: x - modelBoundsX + border,
-                y: y - modelBoundsY + border,
-                width: geometry.width,
-                height: geometry.height
+                x: (x - modelBoundsX) * exportScale + border,
+                y: (y - modelBoundsY) * exportScale + border,
+                width: geometry.width * exportScale,
+                height: geometry.height * exportScale
             };
         }
 
@@ -589,7 +901,7 @@ Draw.loadPlugin(function(ui)
         {
             var lines = linesFor(cell);
             if (lines.length === 0) return;
-            var baseSize = Math.max(7, parseFloat(styleValues[mxConstants.STYLE_FONTSIZE] || '12'));
+            var baseSize = Math.max(7, parseFloat(styleValues[mxConstants.STYLE_FONTSIZE] || '12')) * exportScale;
             var lineSizes = [];
             var totalHeight = 0;
             for (var lineIndex = 0; lineIndex < lines.length; lineIndex++)
@@ -601,10 +913,10 @@ Draw.loadPlugin(function(ui)
             }
             var align = styleValues[mxConstants.STYLE_ALIGN] || mxConstants.ALIGN_CENTER;
             var vertical = styleValues[mxConstants.STYLE_VERTICAL_ALIGN] || mxConstants.ALIGN_MIDDLE;
-            var spacingLeft = parseFloat(styleValues[mxConstants.STYLE_SPACING_LEFT] || '4');
-            var spacingTop = parseFloat(styleValues[mxConstants.STYLE_SPACING_TOP] || '4');
-            var x = align === mxConstants.ALIGN_LEFT ? rect.x + spacingLeft + 3 :
-                (align === mxConstants.ALIGN_RIGHT ? rect.x + rect.width - spacingLeft - 3 : rect.x + rect.width / 2);
+            var spacingLeft = parseFloat(styleValues[mxConstants.STYLE_SPACING_LEFT] || '4') * exportScale;
+            var spacingTop = parseFloat(styleValues[mxConstants.STYLE_SPACING_TOP] || '4') * exportScale;
+            var x = align === mxConstants.ALIGN_LEFT ? rect.x + spacingLeft + 3 * exportScale :
+                (align === mxConstants.ALIGN_RIGHT ? rect.x + rect.width - spacingLeft - 3 * exportScale : rect.x + rect.width / 2);
             var textAnchor = align === mxConstants.ALIGN_LEFT ? 'start' : (align === mxConstants.ALIGN_RIGHT ? 'end' : 'middle');
             var y = vertical === mxConstants.ALIGN_TOP ? rect.y + spacingTop + lineSizes[0] :
                 rect.y + (rect.height - totalHeight) / 2 + lineSizes[0];
@@ -642,14 +954,14 @@ Draw.loadPlugin(function(ui)
             {
                 var edgeText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                 edgeText.setAttribute('x', String(sx(renderState.x + renderState.width / 2)));
-                edgeText.setAttribute('y', String(sy(renderState.y + renderState.height / 2) + 3));
+                edgeText.setAttribute('y', String(sy(renderState.y + renderState.height / 2) + 3 * exportScale));
                 edgeText.setAttribute('text-anchor', 'middle');
                 edgeText.setAttribute('fill', renderStyle[mxConstants.STYLE_FONTCOLOR] || '#111827');
                 edgeText.setAttribute('font-family', renderStyle[mxConstants.STYLE_FONTFAMILY] || 'Arial, sans-serif');
-                edgeText.setAttribute('font-size', String(Math.max(6, parseFloat(renderStyle[mxConstants.STYLE_FONTSIZE] || '10'))));
+                edgeText.setAttribute('font-size', String(Math.max(6, parseFloat(renderStyle[mxConstants.STYLE_FONTSIZE] || '10')) * exportScale));
                 edgeText.setAttribute('paint-order', 'stroke');
                 edgeText.setAttribute('stroke', '#ffffff');
-                edgeText.setAttribute('stroke-width', '4');
+                edgeText.setAttribute('stroke-width', String(4 * exportScale));
                 edgeText.textContent = labelFor(renderCell);
                 svg.appendChild(edgeText);
             }
@@ -663,20 +975,20 @@ Draw.loadPlugin(function(ui)
             if (badgeState == null) continue;
             var badgeRect = exportedVertexRect(badgeCell, badgeState);
             var badgeCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            badgeCircle.setAttribute('cx', String(badgeRect.x + badgeRect.width - 2));
-            badgeCircle.setAttribute('cy', String(badgeRect.y + 2));
-            badgeCircle.setAttribute('r', '8');
+            badgeCircle.setAttribute('cx', String(badgeRect.x + badgeRect.width - 2 * exportScale));
+            badgeCircle.setAttribute('cy', String(badgeRect.y + 2 * exportScale));
+            badgeCircle.setAttribute('r', String(8 * exportScale));
             badgeCircle.setAttribute('fill', '#4f46e5');
             badgeCircle.setAttribute('stroke', '#ffffff');
-            badgeCircle.setAttribute('stroke-width', '2');
+            badgeCircle.setAttribute('stroke-width', String(2 * exportScale));
             svg.appendChild(badgeCircle);
             var badgeText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             badgeText.setAttribute('x', badgeCircle.getAttribute('cx'));
-            badgeText.setAttribute('y', String(parseFloat(badgeCircle.getAttribute('cy')) + 3));
+            badgeText.setAttribute('y', String(parseFloat(badgeCircle.getAttribute('cy')) + 3 * exportScale));
             badgeText.setAttribute('text-anchor', 'middle');
             badgeText.setAttribute('fill', '#ffffff');
             badgeText.setAttribute('font-family', 'Arial, sans-serif');
-            badgeText.setAttribute('font-size', '8');
+            badgeText.setAttribute('font-size', String(8 * exportScale));
             badgeText.setAttribute('font-weight', '700');
             badgeText.textContent = String(badgeIndex + 1);
             svg.appendChild(badgeText);
@@ -693,10 +1005,10 @@ Draw.loadPlugin(function(ui)
             var circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             circle.setAttribute('cx', String(sx(dot.x)));
             circle.setAttribute('cy', String(sy(dot.y)));
-            circle.setAttribute('r', i === 0 ? '8' : String(5 - i));
+            circle.setAttribute('r', String((i === 0 ? 8 : 5 - i) * exportScale));
             circle.setAttribute('fill', color);
             circle.setAttribute('stroke', '#ffffff');
-            circle.setAttribute('stroke-width', i === 0 ? '3' : '1.5');
+            circle.setAttribute('stroke-width', String((i === 0 ? 3 : 1.5) * exportScale));
             circle.setAttribute('opacity', String(1 - i * .28));
             overlay.appendChild(circle);
         }
@@ -705,11 +1017,11 @@ Draw.loadPlugin(function(ui)
         if (point != null)
         {
             var badge = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            badge.setAttribute('x', String(sx(point.x) + 13));
-            badge.setAttribute('y', String(sy(point.y) - 10));
+            badge.setAttribute('x', String(sx(point.x) + 13 * exportScale));
+            badge.setAttribute('y', String(sy(point.y) - 10 * exportScale));
             badge.setAttribute('fill', color);
             badge.setAttribute('font-family', 'Arial, sans-serif');
-            badge.setAttribute('font-size', '11');
+            badge.setAttribute('font-size', String(11 * exportScale));
             badge.setAttribute('font-weight', '700');
             badge.textContent = label;
             overlay.appendChild(badge);
@@ -719,7 +1031,7 @@ Draw.loadPlugin(function(ui)
         return svg;
     }
 
-    function rasterizeSvg(svg)
+    function rasterizeSvg(svg, background)
     {
         return new Promise(function(resolve, reject)
         {
@@ -735,8 +1047,11 @@ Draw.loadPlugin(function(ui)
             var image = new Image();
             image.onload = function()
             {
-                context.fillStyle = '#ffffff';
-                context.fillRect(0, 0, canvas.width, canvas.height);
+                if (background != null)
+                {
+                    context.fillStyle = background;
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                }
                 context.drawImage(image, 0, 0, canvas.width, canvas.height);
                 URL.revokeObjectURL(url);
                 resolve({ data: context.getImageData(0, 0, canvas.width, canvas.height).data, width: canvas.width, height: canvas.height });
@@ -750,8 +1065,106 @@ Draw.loadPlugin(function(ui)
         });
     }
 
-    async function exportActiveFlowGif()
+    function createNativeGifSvg(options)
     {
+        var background = options.transparent ? null : gifBackground(options);
+        return graph.getSvg(background, options.scale > 0 ? options.scale : 1,
+            options.border != null ? Math.max(0, options.border) : 0, true, null, true,
+            null, null, null, graph.shadowVisible, null, options.theme || null);
+    }
+
+    function convertNativeGifSvg(svg)
+    {
+        return new Promise(function(resolve)
+        {
+            ui.editor.convertImages(svg, function(convertedSvg)
+            {
+                resolve(convertedSvg);
+            }, null, ui.editor.createImageUrlConverter());
+        });
+    }
+
+    function nativeGifFrame(baseSvg, movement, progress, options)
+    {
+        var svg = baseSvg.cloneNode(true);
+        var bounds = graph.getGraphBounds();
+        var viewScale = graph.view.scale || 1;
+        var translate = graph.view.translate || new mxPoint();
+        var exportScale = options.scale > 0 ? options.scale : 1;
+        var border = options.border != null ? Math.max(0, options.border) : 0;
+        var modelBoundsX = bounds.x / viewScale - translate.x;
+        var modelBoundsY = bounds.y / viewScale - translate.y;
+        var sx = function(value) { return (value / viewScale - translate.x - modelBoundsX) * exportScale + border; };
+        var sy = function(value) { return (value / viewScale - translate.y - modelBoundsY) * exportScale + border; };
+        var points = routePoints(movement.edge, movement.from);
+        var overlay = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        overlay.setAttribute('data-archiflow-bubble', movement.phase);
+        var color = movement.phase === 'response' ? '#10b981' : '#6366f1';
+        var label = movement.phase === 'response' ? 'RES' : 'REQ';
+        var physicalGap = points.length > 1 ? PARTICLE_TRAIL_GAP * viewScale / Math.max(1, routeLength(points)) : 0;
+
+        for (var i = 2; i >= 0; i--)
+        {
+            var dot = pointOnRoute(points, Math.max(0, progress - i * physicalGap));
+            if (dot == null) continue;
+            var circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', String(sx(dot.x)));
+            circle.setAttribute('cy', String(sy(dot.y)));
+            circle.setAttribute('r', String((i === 0 ? 8 : 5 - i) * exportScale));
+            circle.setAttribute('fill', color);
+            circle.setAttribute('stroke', '#ffffff');
+            circle.setAttribute('stroke-width', String((i === 0 ? 3 : 1.5) * exportScale));
+            circle.setAttribute('opacity', String(1 - i * .28));
+            overlay.appendChild(circle);
+        }
+
+        var point = pointOnRoute(points, progress);
+        if (point != null)
+        {
+            var badge = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            badge.setAttribute('x', String(sx(point.x) + 13 * exportScale));
+            badge.setAttribute('y', String(sy(point.y) - 10 * exportScale));
+            badge.setAttribute('fill', color);
+            badge.setAttribute('font-family', 'Arial, sans-serif');
+            badge.setAttribute('font-size', String(11 * exportScale));
+            badge.setAttribute('font-weight', '700');
+            badge.textContent = label;
+            overlay.appendChild(badge);
+        }
+
+        svg.appendChild(overlay);
+        return svg;
+    }
+
+    function rasterizeNativeGifFrame(svg, width, height, renderScale, background)
+    {
+        return new Promise(function(resolve, reject)
+        {
+            var canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            var context = canvas.getContext('2d');
+            var image = new Image();
+            image.onload = function()
+            {
+                if (background != null)
+                {
+                    context.fillStyle = background;
+                    context.fillRect(0, 0, width, height);
+                }
+
+                if (renderScale < 1) context.scale(renderScale, renderScale);
+                context.drawImage(image, 0, 0);
+                resolve(canvas);
+            };
+            image.onerror = function() { reject(new Error('Draw.io no pudo rasterizar el fotograma SVG.')); };
+            image.src = Editor.createSvgDataUri(mxUtils.getXml(svg));
+        });
+    }
+
+    async function exportActiveFlowGif(options)
+    {
+        options = options || {};
         var flow = activeFlow();
         var movements = gifMovements(flow);
         if (movements.length === 0)
@@ -767,27 +1180,69 @@ Draw.loadPlugin(function(ui)
 
         try
         {
-            var encoder = await loadGifEncoder();
-            var frames = [];
-            var dimensions = null;
-            var samples = Math.max(8, Math.min(14, Math.floor(96 / movements.length)));
-            var total = movements.length * samples;
+            if (typeof GifEncoder !== 'function')
+            {
+                throw new Error('El codificador GIF nativo de Draw.io no está disponible.');
+            }
+
+            var baseSvg = await convertNativeGifSvg(createNativeGifSvg(options));
+            var sourceWidth = Math.max(1, parseInt(baseSvg.getAttribute('width'), 10) || 1);
+            var sourceHeight = Math.max(1, parseInt(baseSvg.getAttribute('height'), 10) || 1);
+            var renderScale = Math.min(1, ui.editor.getMaxCanvasScale(sourceWidth, sourceHeight, 1));
+            var outputWidth = Math.max(1, Math.ceil(sourceWidth * renderScale));
+            var outputHeight = Math.max(1, Math.ceil(sourceHeight * renderScale));
+            var encoder = new GifEncoder(outputWidth, outputHeight);
+            var fps = Math.max(4, Math.min(30, parseInt(options.fps, 10) || 15));
+            encoder.setDelay(Math.round(1000 / fps));
+            encoder.setRepeat(options.repeat != null ? options.repeat : 0);
+            encoder.setTransparent(options.transparent === true);
+            var viewScale = graph.view.scale || 1;
+            var lengths = [];
+            var totalLength = 0;
+            var movementIndex;
+
+            for (movementIndex = 0; movementIndex < movements.length; movementIndex++)
+            {
+                var movementLength = routeLength(routePoints(movements[movementIndex].edge, movements[movementIndex].from)) / viewScale;
+                movementLength = Math.max(1, movementLength);
+                lengths.push(movementLength);
+                totalLength += movementLength;
+            }
+
+            var frameBudget = Math.max(movements.length * 4,
+                Math.min(120, Math.ceil(totalLength / PARTICLE_SPEED * fps)));
+            var samplesByMovement = [];
+            var total = 0;
+
+            for (movementIndex = 0; movementIndex < movements.length; movementIndex++)
+            {
+                var movementSamples = Math.max(4, Math.round(frameBudget * lengths[movementIndex] / totalLength));
+                samplesByMovement.push(movementSamples);
+                total += movementSamples;
+            }
+
+            var background = options.transparent ? null : gifBackground(options);
+            var renderedFrames = 0;
 
             for (var i = 0; i < movements.length; i++)
             {
+                var samples = samplesByMovement[i];
                 for (var frame = 0; frame < samples; frame++)
                 {
-                    gifButton.textContent = 'GIF ' + (frames.length + 1) + '/' + total;
+                    gifButton.textContent = 'GIF ' + (renderedFrames + 1) + '/' + total;
                     await new Promise(function(resolve) { window.setTimeout(resolve, 0); });
-                    dimensions = await rasterizeSvg(svgFrame(movements[i], frame / (samples - 1)));
-                    frames.push({ data: dimensions.data });
+                    var canvas = await rasterizeNativeGifFrame(
+                        nativeGifFrame(baseSvg, movements[i], frame / (samples - 1), options),
+                        outputWidth, outputHeight, renderScale, background);
+                    encoder.addFrame(canvas);
+                    renderedFrames++;
                 }
             }
 
-            var palette = encoder.buildPalette('#ffffff', ['#0f172a', '#475569', '#6366f1', '#10b981', '#ef4444', '#ffffff']);
-            var bytes = encoder.encodeGif(frames, palette, { width: dimensions.width, height: dimensions.height, delayMs: 75 });
+            var blob = encoder.finish();
+            if (blob == null) throw new Error('Draw.io no generó fotogramas para el GIF.');
             var download = document.createElement('a');
-            var blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }));
+            var blobUrl = URL.createObjectURL(blob);
             showGifPreview(blobUrl);
             download.href = blobUrl;
             download.download = (flow.name || 'archiflow').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() + '.gif';
@@ -814,6 +1269,23 @@ Draw.loadPlugin(function(ui)
             renderToolbarState();
         }
     }
+
+    var drawioAnimatedGifExport = ui.exportAnimatedGif;
+    ui.exportAnimatedGif = function(options)
+    {
+        var flow = activeFlow();
+
+        if (flow.steps != null && flow.steps.length > 0)
+        {
+            exportActiveFlowGif(options);
+            return;
+        }
+
+        if (typeof drawioAnimatedGifExport === 'function')
+        {
+            return drawioAnimatedGifExport.apply(ui, arguments);
+        }
+    };
 
     function clearBadges()
     {
@@ -913,41 +1385,46 @@ Draw.loadPlugin(function(ui)
     var style = document.createElement('style');
     style.type = 'text/css';
     style.textContent = [
-        '.geFormatContainer.af-native-mode{width:370px}',
+        '.geFormatContainer.af-native-mode{width:410px}',
         '#af-toolbar{display:inline-flex;vertical-align:top;align-items:center;gap:3px;height:30px;margin:4px 0 0 8px;padding-left:9px;border-left:1px solid light-dark(#d1d5db,#4b5563);font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
         '#af-toolbar .af-brand{font-weight:700;padding:0 7px 0 2px;color:light-dark(#3730a3,#c7d2fe);letter-spacing:.15px}',
         '.af-btn{min-width:28px;height:28px;border:1px solid transparent;border-radius:5px;padding:3px 7px;background:transparent;color:light-dark(#374151,#e5e7eb);font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;white-space:nowrap}',
         '.af-btn:hover{background:light-dark(#e5e7eb,#374151)}.af-btn:disabled{opacity:.38;cursor:default}',
-        '.af-btn-primary{background:light-dark(#e0e7ff,#3730a3);color:light-dark(#3730a3,#eef2ff)}.af-btn-danger{color:light-dark(#b91c1c,#fca5a5)}.af-btn-ghost{color:light-dark(#475569,#cbd5e1)}',
+        '.af-btn-primary{background:light-dark(#e0e7ff,#3730a3);color:light-dark(#3730a3,#eef2ff)}.af-btn-danger{color:light-dark(#b91c1c,#fca5a5)}.af-btn-ghost{color:light-dark(#475569,#cbd5e1)}.af-btn-history{font-size:17px;line-height:1}.af-btn-delete-last{font-size:15px;color:light-dark(#b91c1c,#fca5a5)}',
         '#af-panel{position:static;width:100%;min-height:100%;background:light-dark(#f8fafc,#1b1d1e);color:light-dark(#0f172a,#e5e7eb);border:0;box-shadow:none;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:visible;display:block;margin:0;padding:0}',
         '#af-panel *{box-sizing:border-box}',
         '.af-panel-head{padding:14px 15px 12px;background:light-dark(#eef2ff,#242447);border-bottom:1px solid light-dark(#dbeafe,#3f3f69);color:light-dark(#111827,#f8fafc)}',
         '.af-eyebrow{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:light-dark(#4f46e5,#a5b4fc);margin-bottom:4px}',
         '.af-panel-title{font-size:17px;font-weight:700;line-height:1.25}.af-panel-sub{font-size:11px;color:light-dark(#64748b,#cbd5e1);margin-top:4px;line-height:1.35}',
         '.af-panel-nav{display:grid;grid-template-columns:1fr 1fr;padding:9px 11px 0;background:light-dark(#fff,#1b1d1e);gap:5px}.af-nav-btn{border:0;border-bottom:3px solid transparent;padding:8px 6px;background:transparent;color:light-dark(#64748b,#9ca3af);font-size:11px;font-weight:800;cursor:pointer}.af-nav-btn.af-active{border-bottom-color:#6366f1;color:light-dark(#3730a3,#c7d2fe)}',
-        '.af-contract-tools{display:flex;gap:7px;align-items:center;padding:10px 12px;background:light-dark(#fff,#1b1d1e);border-bottom:1px solid light-dark(#e2e8f0,#333)}.af-import-btn{flex:0 0 auto;border:0;border-radius:7px;padding:8px 10px;background:#6366f1;color:#fff;font-size:11px;font-weight:750;cursor:pointer}.af-contract-target{min-width:0;font-size:10px;color:light-dark(#64748b,#9ca3af);line-height:1.3;overflow:hidden;text-overflow:ellipsis}.af-contract-content{padding:12px 12px 30px}.af-contract-empty{border:1px dashed light-dark(#94a3b8,#4b5563);border-radius:10px;padding:18px 12px;text-align:center;color:light-dark(#64748b,#9ca3af);font-size:11px;line-height:1.5}.af-api-info{padding:12px;border-radius:11px;background:light-dark(#eef2ff,#272542);border:1px solid light-dark(#c7d2fe,#433f69);margin-bottom:12px}.af-api-title{font-size:17px;font-weight:800}.af-api-meta{font-size:10px;color:light-dark(#64748b,#a5b4fc);margin-top:4px}.af-api-server{font:10px/1.35 Consolas,monospace;margin-top:7px;word-break:break-all;color:light-dark(#334155,#cbd5e1)}',
-        '.af-tag{margin:13px 0 7px;font-size:12px;font-weight:850;color:light-dark(#334155,#e2e8f0);display:flex;align-items:center;gap:6px}.af-tag:before{content:"";width:5px;height:15px;border-radius:4px;background:#6366f1}.af-operation{display:block;border:1px solid var(--af-method);border-radius:8px;margin-bottom:8px;background:color-mix(in srgb,var(--af-method) 8%,transparent);overflow:hidden}.af-operation summary{list-style:none;display:grid;grid-template-columns:50px minmax(0,1fr);gap:8px;align-items:center;padding:8px;cursor:pointer}.af-operation summary::-webkit-details-marker{display:none}.af-method{border-radius:5px;padding:5px 3px;background:var(--af-method);color:#fff;text-align:center;font:800 10px Arial,sans-serif;box-shadow:0 1px 2px rgba(0,0,0,.15)}.af-operation-path{min-width:0;font:700 11px/1.3 Consolas,monospace;word-break:break-word}.af-operation-summary{grid-column:2;font-size:10px;color:light-dark(#64748b,#9ca3af);margin-top:-4px}.af-operation-body{padding:0 9px 10px;border-top:1px solid color-mix(in srgb,var(--af-method) 35%,transparent)}.af-swagger-label{font-size:9px;font-weight:850;letter-spacing:.55px;text-transform:uppercase;color:light-dark(#64748b,#9ca3af);margin:9px 0 4px}.af-swagger-row{font-size:10px;line-height:1.4;padding:5px 7px;border-radius:5px;background:light-dark(#fff,#17191c);margin:3px 0;word-break:break-word}.af-status{display:inline-block;min-width:34px;margin-right:6px;font-family:Consolas,monospace;font-weight:800;color:#10b981}.af-schema{font-family:Consolas,monospace;color:light-dark(#475569,#cbd5e1)}',
-        '.af-flowbar{padding:10px 12px;background:light-dark(#fff,#1b1d1e);border-bottom:1px solid light-dark(#e2e8f0,#333);display:flex;gap:6px}',
-        '.af-flowbar select,.af-flowbar input{min-width:0;flex:1;border:1px solid light-dark(#cbd5e1,#48484a);border-radius:6px;padding:7px;background:light-dark(#fff,#1c1c1e);color:light-dark(#0f172a,#e5e7eb)}',
-        '.af-steps{padding:9px 11px;background:light-dark(#f5f7ff,#202036);border-bottom:1px solid light-dark(#dbeafe,#333);display:flex;gap:6px;overflow-x:auto;min-height:54px}',
-        '.af-step-chip{flex:0 0 auto;border:1px solid light-dark(#c7d2fe,#4b4b78);background:light-dark(#fff,#2c2c3d);color:inherit;border-radius:7px;padding:6px 8px;cursor:pointer;max-width:145px}',
-        '.af-step-chip.af-active{border-color:#4f46e5;box-shadow:0 0 0 2px rgba(99,102,241,.16)}',
-        '.af-step-no{font-weight:800;color:#4f46e5;margin-right:4px}.af-step-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom;max-width:105px}',
-        '.af-step-actions{display:flex;align-items:center;gap:5px;padding:7px 11px;background:light-dark(#fff,#1b1d1e);border-bottom:1px solid light-dark(#e2e8f0,#333);overflow-x:auto}.af-step-action{flex:0 0 auto;border:1px solid light-dark(#cbd5e1,#475569);border-radius:6px;padding:5px 7px;background:light-dark(#fff,#25272b);color:inherit;font-size:10px;font-weight:750;cursor:pointer;white-space:nowrap}.af-step-action:hover{border-color:#6366f1}.af-step-action:disabled{opacity:.35;cursor:default}.af-step-action-danger{color:#dc2626;border-color:light-dark(#fecaca,#7f1d1d)}',
+        '.af-contract-tools{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px;align-items:center;padding:10px 12px;background:light-dark(#fff,#1b1d1e);border-bottom:1px solid light-dark(#e2e8f0,#333)}.af-import-btn{flex:0 0 auto;border:0;border-radius:7px;padding:8px 10px;background:#6366f1;color:#fff;font-size:11px;font-weight:750;cursor:pointer}.af-contract-target{min-width:0;font-size:10px;color:light-dark(#475569,#b4bbc5);line-height:1.35;overflow-wrap:anywhere}.af-contract-content{padding:12px 12px 30px}.af-contract-empty{border:1px dashed light-dark(#94a3b8,#4b5563);border-radius:10px;padding:18px 12px;text-align:center;color:light-dark(#64748b,#9ca3af);font-size:11px;line-height:1.5}.af-library-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}.af-library-title{font-size:10px;font-weight:850;letter-spacing:.7px;text-transform:uppercase;color:light-dark(#475569,#cbd5e1)}.af-library-count{font:800 9px/1 Arial,sans-serif;color:#6366f1;background:light-dark(#eef2ff,#312e81);padding:4px 6px;border-radius:999px}.af-contract-library{display:flex;gap:6px;overflow-x:auto;padding:1px 1px 10px;margin-bottom:10px;border-bottom:1px solid light-dark(#e2e8f0,#333)}.af-contract-pill{flex:0 0 auto;max-width:190px;border:1px solid light-dark(#cbd5e1,#475569);border-radius:8px;padding:7px 9px;background:light-dark(#fff,#25272b);color:inherit;text-align:left;cursor:pointer}.af-contract-pill.af-active{border-color:#6366f1;background:light-dark(#eef2ff,#312e81);box-shadow:0 0 0 2px rgba(99,102,241,.1)}.af-contract-pill-name{display:block;font-size:10px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.af-contract-pill-file{display:block;margin-top:2px;font:9px/1.2 Consolas,monospace;color:light-dark(#64748b,#a5b4fc);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.af-selection-card{border:1px solid light-dark(#dbe2ea,#3b4048);border-radius:9px;padding:9px 10px;margin-bottom:10px;background:light-dark(#f8fafc,#22252a)}.af-selection-label{font-size:9px;font-weight:850;letter-spacing:.65px;text-transform:uppercase;color:#6366f1}.af-selection-name{font-size:11px;font-weight:750;line-height:1.35;margin-top:4px;overflow-wrap:anywhere}.af-manual-btn{margin-top:7px;border:1px solid light-dark(#cbd5e1,#475569);border-radius:6px;background:light-dark(#fff,#292c31);color:inherit;padding:6px 8px;font-size:9px;font-weight:800;cursor:pointer}.af-api-info{padding:12px;border-radius:11px;background:light-dark(#eef2ff,#272542);border:1px solid light-dark(#c7d2fe,#433f69);margin-bottom:12px}.af-api-title{font-size:17px;font-weight:800}.af-api-meta{font-size:10px;color:light-dark(#64748b,#a5b4fc);margin-top:4px}.af-api-server{font:10px/1.35 Consolas,monospace;margin-top:7px;word-break:break-all;color:light-dark(#334155,#cbd5e1)}',
+        '.af-tag{margin:13px 0 7px;font-size:12px;font-weight:850;color:light-dark(#334155,#e2e8f0);display:flex;align-items:center;gap:6px}.af-tag:before{content:"";width:5px;height:15px;border-radius:4px;background:#6366f1}.af-operation{display:block;border:1px solid var(--af-method);border-radius:8px;margin-bottom:8px;background:color-mix(in srgb,var(--af-method) 8%,transparent);overflow:hidden}.af-operation summary{list-style:none;display:grid;grid-template-columns:50px minmax(0,1fr);gap:8px;align-items:center;padding:8px;cursor:pointer}.af-operation summary::-webkit-details-marker{display:none}.af-method{border-radius:5px;padding:5px 3px;background:var(--af-method);color:#fff;text-align:center;font:800 10px Arial,sans-serif;box-shadow:0 1px 2px rgba(0,0,0,.15)}.af-operation-path{min-width:0;font:700 11px/1.3 Consolas,monospace;word-break:break-word}.af-operation-summary{grid-column:2;font-size:10px;color:light-dark(#64748b,#9ca3af);margin-top:-4px}.af-operation-body{padding:0 9px 10px;border-top:1px solid color-mix(in srgb,var(--af-method) 35%,transparent)}.af-operation-linkbar{display:flex;align-items:center;gap:7px;padding:8px 0 2px}.af-link-btn{flex:1;border:1px solid var(--af-method);border-radius:6px;background:color-mix(in srgb,var(--af-method) 12%,transparent);color:light-dark(#1f2937,#f8fafc);padding:7px 8px;font-size:9px;font-weight:850;cursor:pointer}.af-link-btn.af-linked{background:var(--af-method);color:#fff}.af-link-btn:disabled{opacity:.45;cursor:default}.af-link-count{flex:0 0 auto;font:800 9px/1 Arial,sans-serif;color:light-dark(#64748b,#aab1bb)}.af-swagger-label{font-size:9px;font-weight:850;letter-spacing:.55px;text-transform:uppercase;color:light-dark(#64748b,#9ca3af);margin:9px 0 4px}.af-swagger-row{font-size:10px;line-height:1.4;padding:5px 7px;border-radius:5px;background:light-dark(#fff,#17191c);margin:3px 0;word-break:break-word}.af-status{display:inline-block;min-width:34px;margin-right:6px;font-family:Consolas,monospace;font-weight:800;color:#10b981}.af-schema{font-family:Consolas,monospace;color:light-dark(#475569,#cbd5e1)}',
+        '.af-flowbar{padding:10px 12px;background:light-dark(#fff,#1b1d1e);border-bottom:1px solid light-dark(#e2e8f0,#333);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px}.af-flowbar .af-btn{height:auto;min-height:34px;grid-column:2;grid-row:1}',
+        '.af-flowbar select,.af-flowbar input{min-width:0;width:100%;border:1px solid light-dark(#cbd5e1,#48484a);border-radius:7px;padding:8px 9px;background:light-dark(#fff,#1c1c1e);color:light-dark(#0f172a,#e5e7eb)}.af-flowbar select{grid-column:1;grid-row:1}.af-flowbar input{grid-column:1/-1;grid-row:2}',
+        '.af-steps{padding:10px 11px;background:light-dark(#f6f8fb,#202126);border-bottom:1px solid light-dark(#dbe2ea,#333);display:flex;flex-direction:column;gap:7px;max-height:210px;overflow-y:auto;overflow-x:hidden}',
+        '.af-step-chip{position:relative;width:100%;border:1px solid light-dark(#d7dde5,#454950);background:light-dark(#fff,#27292d);color:inherit;border-radius:9px;padding:8px 9px;cursor:pointer;text-align:left;display:grid;grid-template-columns:24px 48px minmax(0,1fr);gap:7px;align-items:start;transition:border-color .16s ease,box-shadow .16s ease,background .16s ease}',
+        '.af-step-chip:hover{border-color:light-dark(#94a3b8,#6b7280)}.af-step-chip.af-active{border-color:#6366f1;background:light-dark(#f8f9ff,#292a3d);box-shadow:inset 3px 0 0 #6366f1,0 0 0 2px rgba(99,102,241,.1)}.af-step-chip.af-phase-active-response{border-color:#10b981;box-shadow:inset 3px 0 0 #10b981,0 0 0 2px rgba(16,185,129,.1)}',
+        '.af-step-no{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:light-dark(#eef2f7,#3a3d43);color:light-dark(#475569,#cbd5e1);font:800 10px/1 Arial,sans-serif}.af-step-chip.af-active .af-step-no{background:#6366f1;color:#fff}.af-step-chip.af-phase-active-response .af-step-no{background:#10b981}',
+        '.af-step-method{border-radius:4px;padding:4px 3px;background:var(--af-method);color:#fff;text-align:center;font:800 9px/1.2 Arial,sans-serif;letter-spacing:.2px}.af-step-copy{min-width:0}.af-step-name{display:block;font:750 11px/1.35 Consolas,monospace;overflow-wrap:anywhere;color:light-dark(#0f172a,#f1f5f9)}.af-step-summary{display:block;margin-top:3px;font-size:10px;line-height:1.3;color:light-dark(#64748b,#aab1bb);overflow-wrap:anywhere}',
+        '.af-step-actions{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;padding:8px 11px 10px;background:light-dark(#fff,#1b1d1e);border-bottom:1px solid light-dark(#e2e8f0,#333)}.af-step-action{min-width:0;border:1px solid light-dark(#cbd5e1,#475569);border-radius:6px;padding:6px 5px;background:light-dark(#fff,#25272b);color:inherit;font-size:10px;font-weight:750;cursor:pointer;white-space:nowrap}.af-step-action:nth-child(1),.af-step-action:nth-child(2){grid-column:span 3}.af-step-action:nth-child(n+3){grid-column:span 2}.af-step-action:hover{border-color:#6366f1}.af-step-action:disabled{opacity:.35;cursor:default}.af-step-action-danger{color:#dc2626;border-color:light-dark(#fecaca,#7f1d1d)}',
         '.af-content{padding:13px 14px 28px;overflow:visible}.af-empty{padding:28px 14px;text-align:center;color:light-dark(#64748b,#a0a0a0);line-height:1.5}',
-        '.af-kicker{font-size:11px;color:#6366f1;font-weight:800;text-transform:uppercase;letter-spacing:.8px}.af-object{font-size:20px;font-weight:750;margin:3px 0 12px}',
-        '.af-section{border-top:1px solid light-dark(#e2e8f0,#333);padding-top:12px;margin-top:12px}.af-section-title{font-size:11px;font-weight:800;letter-spacing:.65px;text-transform:uppercase;color:light-dark(#475569,#cbd5e1);margin-bottom:9px}',
+        '.af-kicker{font-size:10px;color:#6366f1;font-weight:850;text-transform:uppercase;letter-spacing:.8px}.af-object{font-size:14px;font-weight:750;margin:4px 0 10px;color:light-dark(#475569,#cbd5e1);overflow-wrap:anywhere}',
+        '.af-endpoint-hero{--af-method:#6366f1;border:1px solid color-mix(in srgb,var(--af-method) 70%,transparent);border-radius:10px;background:color-mix(in srgb,var(--af-method) 8%,transparent);padding:10px;margin:8px 0 12px}.af-endpoint-line{display:grid;grid-template-columns:52px minmax(0,1fr);gap:8px;align-items:start}.af-endpoint-method{border-radius:5px;background:var(--af-method);color:#fff;text-align:center;padding:6px 3px;font:850 10px/1 Arial,sans-serif}.af-endpoint-path{font:800 12px/1.4 Consolas,monospace;overflow-wrap:anywhere}.af-endpoint-purpose{margin:7px 0 0 60px;font-size:10px;line-height:1.4;color:light-dark(#64748b,#aab1bb)}',
+        '.af-section{border:1px solid light-dark(#dbe2ea,#3b4048);border-radius:10px;padding:0 10px 10px;margin-top:11px;background:light-dark(#fff,#202226);overflow:hidden}.af-section-head{margin:0 -10px 10px;padding:9px 10px;border-bottom:1px solid light-dark(#e2e8f0,#3b4048);background:light-dark(#f8fafc,#26292e)}.af-section-title{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:850;letter-spacing:.7px;text-transform:uppercase;color:light-dark(#334155,#e2e8f0)}.af-section-title:before{content:"";width:7px;height:7px;border-radius:50%;background:#64748b}.af-section-sub{font-size:9px;line-height:1.35;color:light-dark(#64748b,#9ca3af);margin:4px 0 0 14px}.af-section-request{border-color:light-dark(#c7d2fe,#3730a3)}.af-section-request .af-section-head{background:light-dark(#eef2ff,#292856);border-bottom-color:light-dark(#c7d2fe,#3730a3)}.af-section-request .af-section-title{color:light-dark(#3730a3,#c7d2fe)}.af-section-request .af-section-title:before{background:#6366f1}.af-section-response{border-color:light-dark(#a7f3d0,#065f46)}.af-section-response .af-section-head{background:light-dark(#ecfdf5,#123d34);border-bottom-color:light-dark(#a7f3d0,#065f46)}.af-section-response .af-section-title{color:light-dark(#047857,#a7f3d0)}.af-section-response .af-section-title:before{background:#10b981}',
         '.af-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.af-field{display:block;margin-bottom:9px}.af-field span{display:block;font-size:11px;font-weight:700;color:light-dark(#475569,#cbd5e1);margin-bottom:5px}',
         '.af-field input,.af-field textarea,.af-field select{width:100%;border:1px solid light-dark(#cbd5e1,#48484a);border-radius:6px;padding:8px 9px;background:light-dark(#fff,#1c1c1e);color:light-dark(#0f172a,#e5e7eb);font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
         '.af-field textarea{min-height:58px;resize:vertical;font-family:Consolas,monospace;font-size:11px;line-height:1.4}',
         '.af-live{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:10px 11px;margin-top:8px;white-space:pre-wrap;word-break:break-word;font:11px/1.45 Consolas,monospace}',
         '.af-live-label{font-size:10px;text-transform:uppercase;letter-spacing:.65px;color:#94a3b8;margin:10px 0 4px}.af-live-label:first-child{margin-top:0}',
-        '.af-roundtrip{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:10px 0 12px}.af-phase{border:1px solid light-dark(#cbd5e1,#475569);border-radius:9px;padding:8px 9px;font-size:10px;font-weight:800;letter-spacing:.55px;text-transform:uppercase;background:light-dark(#fff,#25272b);color:light-dark(#64748b,#94a3b8)}',
+        '.af-roundtrip{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:8px 0 12px}.af-phase{border:1px solid light-dark(#cbd5e1,#475569);border-radius:8px;padding:8px 7px;font-size:9px;font-weight:850;letter-spacing:.45px;text-transform:uppercase;background:light-dark(#fff,#25272b);color:light-dark(#94a3b8,#7f8792)}',
         '.af-phase-request.af-current{border-color:#6366f1;background:light-dark(#eef2ff,#312e81);color:light-dark(#3730a3,#e0e7ff);box-shadow:0 0 0 2px rgba(99,102,241,.12)}.af-phase-response.af-current{border-color:#10b981;background:light-dark(#ecfdf5,#064e3b);color:light-dark(#047857,#d1fae5);box-shadow:0 0 0 2px rgba(16,185,129,.12)}',
+        '.af-live-phase-hero{border-radius:11px;padding:12px;margin:8px 0 11px;color:#fff;box-shadow:0 7px 18px rgba(15,23,42,.14)}.af-live-phase-request{background:linear-gradient(135deg,#4f46e5,#6366f1)}.af-live-phase-response{background:linear-gradient(135deg,#047857,#10b981)}.af-live-phase-label{font:850 10px/1 Arial,sans-serif;letter-spacing:1px;text-transform:uppercase}.af-live-phase-route{font:750 12px/1.45 Consolas,monospace;margin-top:8px;overflow-wrap:anywhere}.af-live-phase-count{font-size:9px;margin-top:7px;opacity:.82}',
+        '.af-playback-progress{display:flex;gap:5px;margin:7px 0 10px}.af-playback-progress span{height:4px;flex:1;border-radius:999px;background:light-dark(#dbe2ea,#3b4048)}.af-playback-progress span.af-complete{background:light-dark(#a5b4fc,#4338ca)}.af-playback-progress span.af-current-request{background:#6366f1;box-shadow:0 0 0 2px rgba(99,102,241,.13)}.af-playback-progress span.af-current-response{background:#10b981;box-shadow:0 0 0 2px rgba(16,185,129,.13)}',
         '.af-live-card{border:1px solid light-dark(#dbe2ea,#374151);border-radius:11px;padding:10px;margin-top:9px;background:light-dark(#fff,#202226)}.af-live-card.af-current-request{border-color:#818cf8}.af-live-card.af-current-response{border-color:#34d399}.af-live-card-title{font-size:10px;font-weight:850;letter-spacing:.7px;text-transform:uppercase;margin-bottom:7px}.af-live-card-request .af-live-card-title{color:#6366f1}.af-live-card-response .af-live-card-title{color:#10b981}.af-live-empty{font-size:11px;color:light-dark(#94a3b8,#9ca3af);font-style:italic}',
         '.af-flow-particle{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;pointer-events:none;z-index:10025;box-sizing:border-box}.af-particle-request{background:#6366f1;border:2px solid #fff;box-shadow:0 0 0 4px rgba(99,102,241,.2),0 0 15px rgba(99,102,241,.9)}.af-particle-response{background:#10b981;border:2px solid #fff;box-shadow:0 0 0 4px rgba(16,185,129,.2),0 0 15px rgba(16,185,129,.9)}.af-particle-trail{width:8px;height:8px;margin:-4px 0 0 -4px;border-width:1px}.af-particle-head:after{content:attr(data-label);position:absolute;left:17px;top:-5px;padding:2px 4px;border-radius:4px;background:#0f172a;color:#fff;font:700 9px/1.2 Arial,sans-serif;letter-spacing:.3px;box-shadow:0 2px 5px rgba(0,0,0,.25)}',
         '.af-recording{animation:afPulse 1.1s ease-in-out infinite;background:#ef4444!important;color:#fff!important}@keyframes afPulse{50%{opacity:.65}}',
         '.af-toast{position:fixed;left:50%;top:100px;transform:translateX(-50%);z-index:10030;padding:10px 14px;border-radius:9px;background:#111827;color:#fff;font:600 12px Arial,sans-serif;box-shadow:0 8px 25px rgba(0,0,0,.25)}',
+        '.af-record-choice{padding:2px 4px;color:light-dark(#0f172a,#f8fafc);font:12px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.af-record-choice h3{font-size:17px;line-height:1.25;margin:0 0 8px}.af-record-choice p{margin:0;color:light-dark(#64748b,#cbd5e1)}.af-record-choice-current{margin:14px 0 12px;padding:10px 11px;border:1px solid light-dark(#c7d2fe,#4338ca);border-radius:8px;background:light-dark(#eef2ff,#292856);font-weight:750;color:light-dark(#3730a3,#e0e7ff)}.af-record-choice-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:13px}.af-record-choice-actions button{min-height:36px;border:1px solid light-dark(#cbd5e1,#475569);border-radius:7px;background:light-dark(#fff,#25272b);color:inherit;font-size:11px;font-weight:750;cursor:pointer}.af-record-choice-actions .af-choice-primary{grid-column:1/-1;background:#6366f1;border-color:#6366f1;color:#fff}.af-record-choice-actions .af-choice-danger{color:light-dark(#b91c1c,#fca5a5)}',
         '.af-gif-preview{position:fixed;left:18px;bottom:18px;z-index:10035;width:min(680px,calc(100vw - 410px));min-width:420px;border:1px solid #94a3b8;border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 18px 48px rgba(15,23,42,.32)}.af-gif-preview-head{height:34px;padding:0 8px 0 12px;display:flex;align-items:center;justify-content:space-between;background:#0f172a;color:#fff;font:700 11px Arial,sans-serif}.af-gif-preview-head button{width:25px;height:25px;border:0;border-radius:5px;background:transparent;color:#fff;font-size:19px;line-height:20px;cursor:pointer}.af-gif-preview-head button:hover{background:#334155}.af-gif-preview img{display:block;width:100%;height:auto;max-height:56vh;object-fit:contain;background:#fff}'
     ].join('\n');
     document.head.appendChild(style);
@@ -956,7 +1433,7 @@ Draw.loadPlugin(function(ui)
     toolbar.id = 'af-toolbar';
     toolbar.appendChild(h('span', 'af-brand', 'ArchiFlow'));
     var recordButton = makeButton('●', 'af-btn-primary', toggleRecording);
-    recordButton.title = 'Grabar un flujo nuevo sin modificar los anteriores';
+    recordButton.title = 'Grabar o continuar el flujo activo';
     recordButton.setAttribute('aria-label', 'Grabar recorrido');
     var playButton = makeButton('▶', '', function() { playFlow(0); });
     playButton.title = 'Reproducir flujo';
@@ -964,9 +1441,15 @@ Draw.loadPlugin(function(ui)
     var stopButton = makeButton('■', 'af-btn-danger', stopPlayback);
     stopButton.title = 'Detener animación';
     stopButton.setAttribute('aria-label', 'Detener animación');
-    var undoButton = makeButton('↶', 'af-btn-ghost', undoLastStep);
-    undoButton.title = 'Eliminar último paso';
-    undoButton.setAttribute('aria-label', 'Eliminar último paso');
+    var undoButton = makeButton('↶', 'af-btn-ghost af-btn-history', undoFlowChange);
+    undoButton.title = 'Deshacer cambio de animación (Ctrl+Z)';
+    undoButton.setAttribute('aria-label', 'Deshacer cambio de animación');
+    var redoButton = makeButton('↷', 'af-btn-ghost af-btn-history', redoFlowChange);
+    redoButton.title = 'Rehacer cambio de animación (Ctrl+Y)';
+    redoButton.setAttribute('aria-label', 'Rehacer cambio de animación');
+    var deleteLastButton = makeButton('⌫', 'af-btn-ghost af-btn-delete-last', deleteLastStep);
+    deleteLastButton.title = 'Eliminar el último paso de la animación';
+    deleteLastButton.setAttribute('aria-label', 'Eliminar último paso');
     var panelButton = makeButton('Detalle', 'af-btn-ghost', function()
     {
         activateArchiflowPanel();
@@ -979,6 +1462,8 @@ Draw.loadPlugin(function(ui)
     toolbar.appendChild(playButton);
     toolbar.appendChild(stopButton);
     toolbar.appendChild(undoButton);
+    toolbar.appendChild(redoButton);
+    toolbar.appendChild(deleteLastButton);
     toolbar.appendChild(gifButton);
     toolbar.appendChild(panelButton);
 
@@ -992,10 +1477,10 @@ Draw.loadPlugin(function(ui)
     var panelHead = h('div', 'af-panel-head');
     panelHead.appendChild(h('div', 'af-eyebrow', 'Arquitectura ejecutable'));
     panelHead.appendChild(h('div', 'af-panel-title', 'Detalle de la consulta'));
-    panelHead.appendChild(h('div', 'af-panel-sub', 'Request, response, parámetros, headers, caché y persistencia por paso.'));
+    panelHead.appendChild(h('div', 'af-panel-sub', 'Request y response por endpoint, en el orden real de ejecución.'));
     panel.appendChild(panelHead);
     var panelNav = h('div', 'af-panel-nav');
-    var contractNavButton = h('button', 'af-nav-btn af-active', 'Contrato API');
+    var contractNavButton = h('button', 'af-nav-btn af-active', 'Contratos');
     contractNavButton.type = 'button';
     var flowNavButton = h('button', 'af-nav-btn', 'Flujo animado');
     flowNavButton.type = 'button';
@@ -1005,8 +1490,8 @@ Draw.loadPlugin(function(ui)
     var contractTools = h('div', 'af-contract-tools');
     var importContractButton = h('button', 'af-import-btn', 'Importar OpenAPI');
     importContractButton.type = 'button';
-    importContractButton.title = 'Selecciona un componente UML y carga un contrato JSON, YAML o YML';
-    var contractTarget = h('div', 'af-contract-target', 'Selecciona un componente');
+    importContractButton.title = 'Carga un contrato JSON, YAML o YML en la biblioteca del diagrama';
+    var contractTarget = h('div', 'af-contract-target', 'Importa un contrato; después selecciona cualquier figura para enlazarla.');
     var contractFile = document.createElement('input');
     contractFile.type = 'file';
     contractFile.accept = '.json,.yaml,.yml,application/json,application/yaml,text/yaml';
@@ -1102,7 +1587,7 @@ Draw.loadPlugin(function(ui)
         archiflowTab.classList.add('geActiveFormatTitle');
         panel.style.display = '';
         ui.formatContainer.classList.add('af-native-mode');
-        setFormatWidth(370);
+        setFormatWidth(410);
     }
 
     function installNativePanel()
@@ -1211,17 +1696,39 @@ Draw.loadPlugin(function(ui)
     mxEvent.addListener(insertStepButton, 'click', function() { startStepCapture('insert'); });
     mxEvent.addListener(deleteStepButton, 'click', deleteSelectedStep);
 
-    mxEvent.addListener(importContractButton, 'click', function()
+    document.addEventListener('keydown', function(event)
     {
-        var component = componentForCell(graph.getSelectionCell());
+        var target = event.target;
+        var tagName = target != null && target.tagName != null ? target.tagName.toLowerCase() : '';
+        var isEditingText = tagName === 'input' || tagName === 'textarea' || tagName === 'select' ||
+            (target != null && target.isContentEditable);
+        var modifier = event.ctrlKey || event.metaKey;
+        var key = String(event.key || '').toLowerCase();
+        var handlesFlowHistory = recording || (archiflowTabActive && panelMode === 'flow');
 
-        if (component == null)
+        if (!modifier || isEditingText || !handlesFlowHistory || ui.dialog != null)
         {
-            toast('Selecciona primero el componente UML del microservicio');
             return;
         }
 
-        selectedContractComponentId = component.id;
+        if (key === 'z' && !event.shiftKey)
+        {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            undoFlowChange();
+        }
+        else if (key === 'y' || (key === 'z' && event.shiftKey))
+        {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            redoFlowChange();
+        }
+    }, true);
+
+    mxEvent.addListener(importContractButton, 'click', function()
+    {
         contractFile.value = '';
         contractFile.click();
     });
@@ -1233,13 +1740,12 @@ Draw.loadPlugin(function(ui)
             return;
         }
 
-        var component = model.getCell(selectedContractComponentId);
         var reader = new FileReader();
         reader.onload = function()
         {
             parseContract(String(reader.result || '')).then(function(contract)
             {
-                importContract(component, contract, contractFile.files[0].name);
+                importContract(contract, contractFile.files[0].name);
             }).catch(function(error)
             {
                 ui.handleError(error);
@@ -1279,11 +1785,29 @@ Draw.loadPlugin(function(ui)
     {
         var method = graph.getAttributeForCell(cell, 'archiflowHttpMethod', '');
         var path = graph.getAttributeForCell(cell, 'archiflowPath', '');
+        var bindings = cellBindings(cell);
 
         if (method !== '' || path !== '')
         {
             step.operation = (method + ' ' + path).trim();
             step.protocol = 'REST';
+
+            if (bindings.length > 0)
+            {
+                var record = contractById(bindings[0].contractId);
+                var operations = record != null ? contractOperations(record.document) : [];
+
+                for (var i = 0; i < operations.length; i++)
+                {
+                    if (operations[i].method === bindings[0].method && operations[i].path === bindings[0].path)
+                    {
+                        applyContractDescriptorToStep(step, operations[i]);
+                        break;
+                    }
+                }
+
+                if (!step.purpose) step.purpose = bindings[0].summary || '';
+            }
         }
     }
 
@@ -1312,7 +1836,7 @@ Draw.loadPlugin(function(ui)
         recording = false;
         recordingMode = 'new';
         recordButton.textContent = '●';
-        recordButton.title = 'Grabar un flujo nuevo';
+        recordButton.title = 'Grabar o continuar el flujo activo';
         recordButton.setAttribute('aria-label', 'Grabar recorrido');
         recordButton.classList.remove('af-recording');
         ui.editor.setStatus(message || 'Grabación finalizada: ' + activeFlow().steps.length + ' pasos');
@@ -1353,6 +1877,7 @@ Draw.loadPlugin(function(ui)
             return;
         }
 
+        rememberFlow(flow);
         var moved = flow.steps[selectedStep];
         flow.steps[selectedStep] = flow.steps[target];
         flow.steps[target] = moved;
@@ -1372,6 +1897,7 @@ Draw.loadPlugin(function(ui)
             return;
         }
 
+        rememberFlow(flow);
         flow.steps.splice(selectedStep, 1);
         selectedStep = Math.max(0, Math.min(selectedStep, flow.steps.length - 1));
         reconnectSteps(flow);
@@ -1599,9 +2125,9 @@ Draw.loadPlugin(function(ui)
         return schema.type || 'any';
     }
 
-    function importContract(component, contract, fileName)
+    function importContract(contract, fileName)
     {
-        if (component == null || contract == null || (contract.openapi == null && contract.swagger == null) || contract.paths == null)
+        if (contract == null || (contract.openapi == null && contract.swagger == null) || contract.paths == null)
         {
             throw new Error('El archivo no contiene un contrato OpenAPI válido.');
         }
@@ -1613,87 +2139,19 @@ Draw.loadPlugin(function(ui)
             throw new Error('El contrato no contiene endpoints.');
         }
 
-        model.beginUpdate();
-        try
-        {
-            var children = graph.getChildVertices(component);
-            var generatedByKey = {};
-            var generated = [];
-
-            for (var i = 0; i < children.length; i++)
-            {
-                if (graph.getAttributeForCell(children[i], 'archiflowContractEndpoint', '0') === '1')
-                {
-                    generated.push(children[i]);
-                    generatedByKey[graph.getAttributeForCell(children[i], 'archiflowHttpMethod', '') + ' ' +
-                        graph.getAttributeForCell(children[i], 'archiflowPath', '')] = children[i];
-                }
-            }
-
-            graph.setAttributeForCell(component, 'archiflowOpenApi', JSON.stringify(contract));
-            graph.setAttributeForCell(component, 'archiflowContractFile', fileName || 'openapi');
-
-            var geometry = model.getGeometry(component);
-            var requiredHeight = Math.max(210, 112 + operations.length * 72);
-
-            if (geometry != null && geometry.height < requiredHeight)
-            {
-                var resized = geometry.clone();
-                resized.height = requiredHeight;
-                model.setGeometry(component, resized);
-                geometry = resized;
-            }
-
-            var width = geometry != null ? geometry.width : 390;
-
-            for (var j = 0; j < operations.length; j++)
-            {
-                var descriptor = operations[j];
-                var color = methodColor(descriptor.method);
-                var key = descriptor.method + ' ' + descriptor.path;
-                var endpoint = generatedByKey[key];
-                var endpointLabel = '<b>' + descriptor.method + '</b> ' + mxUtils.htmlEntities(descriptor.path) +
-                    '<br><font color="#64748b" style="font-size:10px;font-weight:normal">' +
-                    mxUtils.htmlEntities(descriptor.operation.summary || descriptor.operation.operationId || descriptor.tag) + '</font>';
-                var endpointGeometry = new mxGeometry(32, 92 + j * 72, Math.max(210, width - 68), 56);
-
-                if (endpoint == null)
-                {
-                    endpoint = graph.insertVertex(component, null, valueNode(endpointLabel, 'endpoint'),
-                        endpointGeometry.x, endpointGeometry.y, endpointGeometry.width, endpointGeometry.height,
-                        'rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeWidth=2;fontSize=12;align=left;spacingLeft=12;verticalAlign=middle;fillColor=#ffffff;strokeColor=' + color + ';');
-                }
-                else
-                {
-                    model.setValue(endpoint, valueNode(endpointLabel, 'endpoint'));
-                    model.setGeometry(endpoint, endpointGeometry);
-                    graph.setCellStyles('strokeColor', color, [endpoint]);
-                    generated.splice(generated.indexOf(endpoint), 1);
-                }
-
-                graph.setAttributeForCell(endpoint, 'archiflowContractEndpoint', '1');
-                graph.setAttributeForCell(endpoint, 'archiflowOperationId', descriptor.operation.operationId || descriptor.method + '-' + descriptor.path);
-                graph.setAttributeForCell(endpoint, 'archiflowHttpMethod', descriptor.method);
-                graph.setAttributeForCell(endpoint, 'archiflowPath', descriptor.path);
-            }
-
-            if (generated.length > 0)
-            {
-                graph.removeCells(generated, true);
-            }
-        }
-        finally
-        {
-            model.endUpdate();
-        }
-
-        selectedContractComponentId = component.id;
-        ui.editor.modified = true;
-        graph.refresh(component);
-        graph.scrollCellToVisible(component);
+        var info = contract.info || {};
+        var record = {
+            id: uid('contract'),
+            name: info.title || fileName || 'OpenAPI',
+            fileName: fileName || 'openapi',
+            document: contract
+        };
+        store.contracts.push(record);
+        store.activeContractId = record.id;
         panelMode = 'contract';
+        saveStore(operations.length + ' endpoints añadidos a la biblioteca');
         render();
-        toast(operations.length + ' endpoints importados en ' + labelFor(component));
+        toast(record.name + ': ' + operations.length + ' endpoints disponibles para enlazar');
     }
 
     function toggleRecording()
@@ -1711,11 +2169,27 @@ Draw.loadPlugin(function(ui)
 
         if (activeFlow().steps.length > 0)
         {
-            var flow = { id: uid('flow'), name: 'Nuevo flujo ' + (store.flows.length + 1), steps: [] };
-            store.flows.push(flow);
-            store.activeFlowId = flow.id;
+            showRecordingChoice();
+            return;
+        }
+
+        beginRecording(false);
+    }
+
+    function beginRecording(restart)
+    {
+        var flow = activeFlow();
+
+        if (restart)
+        {
+            rememberFlow(flow);
+            flow.steps = [];
             selectedStep = 0;
-            saveStore('Nuevo flujo creado sin modificar los anteriores');
+            saveStore('Flujo reiniciado; el historial permite recuperar los pasos anteriores');
+        }
+        else
+        {
+            selectedStep = Math.max(0, flow.steps.length - 1);
         }
 
         saveStore('Grabación iniciada: selecciona cuadros en orden');
@@ -1727,36 +2201,77 @@ Draw.loadPlugin(function(ui)
         recordButton.classList.add('af-recording');
         refreshBadges();
         render();
-        toast('Nuevo flujo: selecciona los componentes en orden');
+        toast(restart ? 'Flujo reiniciado: el próximo clic será el paso 1' :
+            'Continuando: el próximo clic será el paso ' + (flow.steps.length + 1));
     }
 
-    function undoLastStep()
+    function showRecordingChoice()
+    {
+        var flow = activeFlow();
+        var dialog = h('div', 'af-record-choice');
+        dialog.appendChild(h('h3', null, '¿Cómo quieres continuar la grabación?'));
+        dialog.appendChild(h('p', null, 'El flujo activo ya tiene pasos guardados. Puedes continuarlo o empezar nuevamente en este mismo flujo.'));
+        dialog.appendChild(h('div', 'af-record-choice-current', flow.name + ' · ' + flow.steps.length +
+            (flow.steps.length === 1 ? ' paso guardado' : ' pasos guardados')));
+        var actions = h('div', 'af-record-choice-actions');
+        var continueButton = h('button', 'af-choice-primary', 'Continuar desde el paso ' + (flow.steps.length + 1));
+        var restartButton = h('button', 'af-choice-danger', 'Reiniciar todo');
+        var cancelButton = h('button', null, 'Cancelar');
+        continueButton.type = restartButton.type = cancelButton.type = 'button';
+        actions.appendChild(continueButton);
+        actions.appendChild(restartButton);
+        actions.appendChild(cancelButton);
+        dialog.appendChild(actions);
+
+        mxEvent.addListener(continueButton, 'click', function()
+        {
+            ui.hideDialog();
+            beginRecording(false);
+        });
+        mxEvent.addListener(restartButton, 'click', function()
+        {
+            ui.hideDialog();
+            beginRecording(true);
+        });
+        mxEvent.addListener(cancelButton, 'click', function() { ui.hideDialog(); });
+        ui.showDialog(dialog, 410, 225, true, true);
+        window.setTimeout(function() { continueButton.focus(); }, 0);
+    }
+
+    function deleteLastStep()
     {
         var flow = activeFlow();
 
         if (flow.steps.length > 0)
         {
+            rememberFlow(flow);
             flow.steps.pop();
             selectedStep = Math.max(0, flow.steps.length - 1);
             reconnectSteps(flow);
             saveStore('Último paso eliminado');
             refreshBadges();
             render();
+            toast('Último paso eliminado; puedes recuperarlo con Ctrl+Z');
         }
     }
 
     graph.selectionModel.addListener(mxEvent.CHANGE, function()
     {
-        var selectedComponent = componentForCell(graph.getSelectionCell());
+        var selectedCell = graph.getSelectionCell();
 
-        if (selectedComponent != null)
+        if (selectedCell != null && model.isVertex(selectedCell))
         {
-            selectedContractComponentId = selectedComponent.id;
+            selectedContractCellId = selectedCell.id;
 
             if (panelMode === 'contract')
             {
                 render();
             }
+        }
+        else
+        {
+            selectedContractCellId = null;
+            if (panelMode === 'contract') render();
         }
 
         if (!recording)
@@ -1781,6 +2296,7 @@ Draw.loadPlugin(function(ui)
 
         if (recordingMode === 'replace')
         {
+            rememberFlow(flow);
             var replaced = flow.steps[selectedStep];
             replaced.cellId = cell.id;
             applyEndpointDefaults(replaced, cell);
@@ -1793,6 +2309,7 @@ Draw.loadPlugin(function(ui)
 
         if (recordingMode === 'insert')
         {
+            rememberFlow(flow);
             selectedStep++;
             flow.steps.splice(selectedStep, 0, stepForCell(cell));
             reconnectSteps(flow);
@@ -1802,6 +2319,7 @@ Draw.loadPlugin(function(ui)
             return;
         }
 
+        rememberFlow(flow);
         flow.steps.push(stepForCell(cell));
         selectedStep = flow.steps.length - 1;
         reconnectSteps(flow);
@@ -1846,8 +2364,6 @@ Draw.loadPlugin(function(ui)
         }
 
         removeParticles();
-        for (var j = 0; j < highlights.length; j++) highlights[j].destroy();
-        highlights = [];
 
         selectedStep = index;
         var step = flow.steps[index];
@@ -1856,16 +2372,6 @@ Draw.loadPlugin(function(ui)
         var fromCell = sourceCellFor(step, null);
         var edge = step.edgeId != null ? model.getCell(step.edgeId) : inferEdge(fromCell, cell);
 
-        if (cell != null)
-        {
-            setOpacity(cell, '1');
-            var highlight = new mxCellHighlight(graph, playbackPhase === 'response' ? '#10b981' : '#6366f1', 6, true);
-            highlight.highlight(graph.view.getState(cell));
-            highlights.push(highlight);
-            graph.scrollCellToVisible(cell);
-        }
-        if (fromCell != null) setOpacity(fromCell, '1');
-        if (edge != null) setOpacity(edge, '1');
         render();
 
         function next()
@@ -1901,15 +2407,6 @@ Draw.loadPlugin(function(ui)
             playing = true;
             panelMode = 'flow';
 
-            for (var id in model.cells)
-            {
-                var candidate = model.cells[id];
-                if (candidate != null && model.isVertex(candidate))
-                {
-                    setOpacity(candidate, '.18');
-                }
-            }
-
             renderToolbarState();
 
             if (flow.timeline === true)
@@ -1942,25 +2439,10 @@ Draw.loadPlugin(function(ui)
 
         removeParticles();
 
-        for (var j = 0; j < highlights.length; j++)
-        {
-            highlights[j].destroy();
-        }
-        highlights = [];
-
         selectedStep = index;
         playbackPhase = phase;
         var step = flow.steps[index];
         var cell = cellFor(step);
-
-        if (cell != null)
-        {
-            setOpacity(cell, '1');
-            var cellHighlight = new mxCellHighlight(graph, '#6366f1', 6, true);
-            cellHighlight.highlight(graph.view.getState(cell));
-            highlights.push(cellHighlight);
-            graph.scrollCellToVisible(cell);
-        }
 
         var playbackEdgeId = phase === 'response' && step.responseEdgeId != null ? step.responseEdgeId : step.edgeId;
         var edge = playbackEdgeId != null ? model.getCell(playbackEdgeId) : null;
@@ -1971,11 +2453,6 @@ Draw.loadPlugin(function(ui)
         if (edge == null && explicitFromCell != null)
         {
             edge = inferEdge(explicitFromCell, cell);
-        }
-
-        if (edge != null && explicitFromCell != null)
-        {
-            setOpacity(edge, '1');
         }
 
         render();
@@ -2006,11 +2483,14 @@ Draw.loadPlugin(function(ui)
     function renderToolbarState()
     {
         var steps = activeFlow().steps;
+        var history = historyForFlow(activeFlow());
         recordButton.disabled = playing || exportingGif;
         playButton.disabled = playing || exportingGif;
         stopButton.disabled = !playing || exportingGif;
         gifButton.disabled = playing || exportingGif || gifMovements(activeFlow()).length === 0;
-        undoButton.disabled = playing || exportingGif || recording || steps.length === 0;
+        undoButton.disabled = playing || exportingGif || history.past.length === 0;
+        redoButton.disabled = playing || exportingGif || history.future.length === 0;
+        deleteLastButton.disabled = playing || exportingGif || steps.length === 0;
         newFlowButton.disabled = playing || exportingGif || recording;
         flowSelect.disabled = playing || exportingGif || recording;
         flowName.disabled = playing || exportingGif || recording;
@@ -2037,6 +2517,60 @@ Draw.loadPlugin(function(ui)
         flowName.value = activeFlow().name;
     }
 
+    function operationParts(step)
+    {
+        var operation = step != null && step.operation != null ? String(step.operation).trim() : '';
+        var match = operation.match(/^([A-Za-z]+)\s+(.+)$/);
+
+        if (match != null)
+        {
+            return { method: match[1].toUpperCase(), path: match[2] };
+        }
+
+        return {
+            method: 'STEP',
+            path: operation || labelFor(cellFor(step))
+        };
+    }
+
+    function hasCacheData(step)
+    {
+        if (step == null)
+        {
+            return false;
+        }
+
+        var values = [step.cacheOperation, step.cacheKey, step.cacheData, step.cacheTtl];
+
+        for (var i = 0; i < values.length; i++)
+        {
+            if (values[i] != null && String(values[i]).trim() !== '')
+            {
+                return true;
+            }
+        }
+
+        return /redis|cache|cach[eé]/i.test(step.protocol || '');
+    }
+
+    function renderEndpointHero(step)
+    {
+        var descriptor = operationParts(step);
+        var hero = h('div', 'af-endpoint-hero');
+        hero.style.setProperty('--af-method', methodColor(descriptor.method));
+        var line = h('div', 'af-endpoint-line');
+        line.appendChild(h('span', 'af-endpoint-method', descriptor.method));
+        line.appendChild(h('span', 'af-endpoint-path', descriptor.path));
+        hero.appendChild(line);
+
+        if (step.purpose != null && String(step.purpose).trim() !== '')
+        {
+            hero.appendChild(h('div', 'af-endpoint-purpose', step.purpose));
+        }
+
+        return hero;
+    }
+
     function renderSteps()
     {
         stepsStrip.innerHTML = '';
@@ -2052,10 +2586,19 @@ Draw.loadPlugin(function(ui)
         {
             (function(stepIndex)
             {
-                var chip = h('button', 'af-step-chip' + (stepIndex === selectedStep ? ' af-active' : ''));
+                var step = steps[stepIndex];
+                var descriptor = operationParts(step);
+                var phaseClass = playing && stepIndex === selectedStep ? ' af-phase-active-' + playbackPhase : '';
+                var chip = h('button', 'af-step-chip' + (stepIndex === selectedStep ? ' af-active' : '') + phaseClass);
                 chip.type = 'button';
+                chip.title = (step.operation || labelFor(cellFor(step))) + (step.purpose ? '\n' + step.purpose : '');
+                chip.style.setProperty('--af-method', methodColor(descriptor.method));
                 chip.appendChild(h('span', 'af-step-no', String(stepIndex + 1)));
-                chip.appendChild(h('span', 'af-step-name', labelFor(cellFor(steps[stepIndex]))));
+                chip.appendChild(h('span', 'af-step-method', descriptor.method));
+                var copy = h('span', 'af-step-copy');
+                copy.appendChild(h('span', 'af-step-name', descriptor.path));
+                copy.appendChild(h('span', 'af-step-summary', step.purpose || labelFor(cellFor(step))));
+                chip.appendChild(copy);
                 mxEvent.addListener(chip, 'click', function()
                 {
                     selectedStep = stepIndex;
@@ -2098,16 +2641,29 @@ Draw.loadPlugin(function(ui)
             {
                 flow.steps[selectedStep][field] = input.value;
                 saveStore('Detalle técnico actualizado');
+
+                if (field === 'protocol')
+                {
+                    window.setTimeout(render, 0);
+                }
             }
         });
         wrapper.appendChild(input);
         parent.appendChild(wrapper);
     }
 
-    function section(title)
+    function section(title, tone, subtitle)
     {
-        var el = h('section', 'af-section');
-        el.appendChild(h('div', 'af-section-title', title));
+        var el = h('section', 'af-section' + (tone ? ' af-section-' + tone : ''));
+        var head = h('div', 'af-section-head');
+        head.appendChild(h('div', 'af-section-title', title));
+
+        if (subtitle != null && subtitle !== '')
+        {
+            head.appendChild(h('div', 'af-section-sub', subtitle));
+        }
+
+        el.appendChild(head);
         return el;
     }
 
@@ -2148,27 +2704,74 @@ Draw.loadPlugin(function(ui)
     function renderLive(step)
     {
         content.innerHTML = '';
-        content.appendChild(h('div', 'af-kicker', (playbackPhase === 'request' ? 'Ida · Request' : 'Vuelta · Response') + ' · Paso ' + (selectedStep + 1) + ' de ' + activeFlow().steps.length));
-        content.appendChild(h('div', 'af-object', labelFor(cellFor(step))));
+        var isRequest = playbackPhase === 'request';
+        var flow = activeFlow();
+        var currentLabel = labelFor(cellFor(step));
+        var currentOperation = operationParts(step);
+        var currentRoute = currentOperation.method + ' ' + currentOperation.path;
+        var previousRoute = 'Cliente / origen';
+
+        if (selectedStep > 0)
+        {
+            var previousOperation = operationParts(flow.steps[selectedStep - 1]);
+            previousRoute = previousOperation.method + ' ' + previousOperation.path;
+        }
+
+        var route = isRequest ? previousRoute + '  →  ' + currentRoute : currentRoute + '  →  ' + previousRoute;
+        content.appendChild(h('div', 'af-kicker', 'Ejecución en vivo'));
+        var progress = h('div', 'af-playback-progress');
+
+        for (var progressIndex = 0; progressIndex < flow.steps.length; progressIndex++)
+        {
+            var progressClass = progressIndex < selectedStep ? ' af-complete' : '';
+
+            if (progressIndex === selectedStep)
+            {
+                progressClass += ' af-current-' + playbackPhase;
+            }
+
+            var progressStep = h('span', progressClass.trim());
+            progressStep.title = 'Paso ' + (progressIndex + 1) + ' de ' + flow.steps.length;
+            progress.appendChild(progressStep);
+        }
+
+        content.appendChild(progress);
+        var phaseHero = h('div', 'af-live-phase-hero af-live-phase-' + playbackPhase);
+        phaseHero.appendChild(h('div', 'af-live-phase-label', isRequest ? 'IDA · REQUEST' : 'VUELTA · RESPONSE'));
+        phaseHero.appendChild(h('div', 'af-live-phase-route', route));
+        phaseHero.appendChild(h('div', 'af-live-phase-count', 'Paso ' + (selectedStep + 1) + ' de ' + flow.steps.length));
+        content.appendChild(phaseHero);
         var phases = h('div', 'af-roundtrip');
-        phases.appendChild(h('div', 'af-phase af-phase-request' + (playbackPhase === 'request' ? ' af-current' : ''), 'IDA → REQUEST'));
-        phases.appendChild(h('div', 'af-phase af-phase-response' + (playbackPhase === 'response' ? ' af-current' : ''), '← VUELTA · RESPONSE'));
+        phases.appendChild(h('div', 'af-phase af-phase-request' + (isRequest ? ' af-current' : ''), '1 · REQUEST →'));
+        phases.appendChild(h('div', 'af-phase af-phase-response' + (!isRequest ? ' af-current' : ''), '2 · ← RESPONSE'));
         content.appendChild(phases);
-        liveValue(content, 'Operación', step.operation);
+        content.appendChild(renderEndpointHero(step));
+        liveValue(content, 'Componente', currentLabel);
         liveValue(content, 'Protocolo', step.protocol);
-        liveValue(content, 'Propósito', step.purpose);
-        liveCard(content, 'IDA → REQUEST', 'request', playbackPhase === 'request', [
-            ['Query params', step.queryParams],
-            ['Path params', step.pathParams],
-            ['Headers', step.requestHeaders],
-            ['Body', step.requestBody]
-        ]);
-        liveCard(content, '← VUELTA · RESPONSE', 'response', playbackPhase === 'response', [
-            ['Status', step.responseStatus],
-            ['Headers', step.responseHeaders],
-            ['Body', step.responseBody]
-        ]);
-        liveValue(content, 'Caché', [step.cacheOperation, step.cacheKey, step.cacheData, step.cacheTtl].filter(Boolean).join('\n'));
+
+        if (isRequest)
+        {
+            liveCard(content, 'Datos enviados · REQUEST', 'request', true, [
+                ['Path params', step.pathParams],
+                ['Query params', step.queryParams],
+                ['Headers', step.requestHeaders],
+                ['Request body', step.requestBody]
+            ]);
+        }
+        else
+        {
+            liveCard(content, 'Datos recibidos · RESPONSE', 'response', true, [
+                ['Status', step.responseStatus],
+                ['Headers', step.responseHeaders],
+                ['Response body', step.responseBody]
+            ]);
+        }
+
+        if (hasCacheData(step))
+        {
+            liveValue(content, 'Caché', [step.cacheOperation, step.cacheKey, step.cacheData, step.cacheTtl].filter(Boolean).join('\n'));
+        }
+
         liveValue(content, 'Notas', step.notes);
     }
 
@@ -2176,9 +2779,10 @@ Draw.loadPlugin(function(ui)
     {
         content.innerHTML = '';
         content.appendChild(h('div', 'af-kicker', 'Paso ' + (selectedStep + 1) + ' de ' + activeFlow().steps.length));
-        content.appendChild(h('div', 'af-object', labelFor(cellFor(step))));
+        content.appendChild(renderEndpointHero(step));
+        content.appendChild(h('div', 'af-object', 'Componente · ' + labelFor(cellFor(step))));
 
-        var general = h('div');
+        var general = section('Operación', '', 'Identidad del endpoint y propósito dentro del flujo.');
         var generalGrid = h('div', 'af-grid');
         addField(generalGrid, 'Operación', 'operation', step.operation, false);
         addField(generalGrid, 'Protocolo', 'protocol', step.protocol, false, ['HTTPS', 'HTTP', 'REST', 'gRPC', 'Redis', 'SQL', 'Kafka', 'AMQP', 'Interno']);
@@ -2186,31 +2790,34 @@ Draw.loadPlugin(function(ui)
         addField(general, 'Propósito', 'purpose', step.purpose, false);
         content.appendChild(general);
 
-        var request = section('IDA → REQUEST');
+        var request = section('REQUEST · datos enviados', 'request', 'Parámetros, headers y body que salen hacia el siguiente componente.');
         var params = h('div', 'af-grid');
-        addField(params, 'Query params', 'queryParams', step.queryParams, true);
         addField(params, 'Path params', 'pathParams', step.pathParams, true);
+        addField(params, 'Query params', 'queryParams', step.queryParams, true);
         request.appendChild(params);
-        addField(request, 'Headers', 'requestHeaders', step.requestHeaders, true);
-        addField(request, 'Body', 'requestBody', step.requestBody, true);
+        addField(request, 'Request headers', 'requestHeaders', step.requestHeaders, true);
+        addField(request, 'Request body', 'requestBody', step.requestBody, true);
         content.appendChild(request);
 
-        var response = section('← VUELTA · RESPONSE');
-        addField(response, 'Status', 'responseStatus', step.responseStatus, false);
-        addField(response, 'Headers', 'responseHeaders', step.responseHeaders, true);
-        addField(response, 'Body', 'responseBody', step.responseBody, true);
+        var response = section('RESPONSE · datos recibidos', 'response', 'Status, headers y body que regresan al componente de origen.');
+        addField(response, 'Response status', 'responseStatus', step.responseStatus, false);
+        addField(response, 'Response headers', 'responseHeaders', step.responseHeaders, true);
+        addField(response, 'Response body', 'responseBody', step.responseBody, true);
         content.appendChild(response);
 
-        var cache = section('Caché y persistencia');
-        var cacheGrid = h('div', 'af-grid');
-        addField(cacheGrid, 'Operación', 'cacheOperation', step.cacheOperation, false);
-        addField(cacheGrid, 'TTL', 'cacheTtl', step.cacheTtl, false);
-        cache.appendChild(cacheGrid);
-        addField(cache, 'Clave / recurso', 'cacheKey', step.cacheKey, false);
-        addField(cache, 'Datos utilizados o guardados', 'cacheData', step.cacheData, true);
-        content.appendChild(cache);
+        if (hasCacheData(step))
+        {
+            var cache = section('Caché', '', 'Solo aparece cuando el paso usa Redis o tiene datos de caché definidos.');
+            var cacheGrid = h('div', 'af-grid');
+            addField(cacheGrid, 'Operación', 'cacheOperation', step.cacheOperation, false);
+            addField(cacheGrid, 'TTL', 'cacheTtl', step.cacheTtl, false);
+            cache.appendChild(cacheGrid);
+            addField(cache, 'Clave / recurso', 'cacheKey', step.cacheKey, false);
+            addField(cache, 'Datos utilizados o guardados', 'cacheData', step.cacheData, true);
+            content.appendChild(cache);
+        }
 
-        var notes = section('Contexto');
+        var notes = section('Contexto', '', 'Información adicional que ayuda a interpretar este paso.');
         addField(notes, 'Notas', 'notes', step.notes, true);
         content.appendChild(notes);
     }
@@ -2220,7 +2827,7 @@ Draw.loadPlugin(function(ui)
         parent.appendChild(h('div', 'af-swagger-row' + (className ? ' ' + className : ''), text));
     }
 
-    function renderSwaggerOperation(parent, descriptor)
+    function renderSwaggerOperation(parent, descriptor, contractRecord)
     {
         var operation = descriptor.operation || {};
         var details = h('details', 'af-operation');
@@ -2231,6 +2838,23 @@ Draw.loadPlugin(function(ui)
         summary.appendChild(h('span', 'af-operation-summary', operation.summary || operation.operationId || 'Sin descripción'));
         details.appendChild(summary);
         var body = h('div', 'af-operation-body');
+        var linkbar = h('div', 'af-operation-linkbar');
+        var selectedCell = selectedContractCell();
+        var linked = selectedCell != null && isCellBoundTo(selectedCell, contractRecord.id, descriptor);
+        var linkButton = h('button', 'af-link-btn' + (linked ? ' af-linked' : ''),
+            linked ? '✓ Enlazado a esta figura' : 'Enlazar figura seleccionada');
+        linkButton.type = 'button';
+        linkButton.disabled = selectedCell == null;
+        linkButton.title = selectedCell != null ? labelFor(selectedCell) : 'Selecciona cualquier figura del lienzo';
+        mxEvent.addListener(linkButton, 'click', function(event)
+        {
+            mxEvent.consume(event);
+            toggleEndpointBinding(contractRecord, descriptor);
+        });
+        linkbar.appendChild(linkButton);
+        var links = bindingCount(contractRecord.id, descriptor);
+        linkbar.appendChild(h('span', 'af-link-count', links + (links === 1 ? ' enlace' : ' enlaces')));
+        body.appendChild(linkbar);
 
         if (operation.operationId != null)
         {
@@ -2307,60 +2931,91 @@ Draw.loadPlugin(function(ui)
         parent.appendChild(details);
     }
 
-    function renderContract()
+    function appendSelectedCellCard(parent, cell)
     {
-        contractContent.innerHTML = '';
-        var component = selectedContractComponentId != null ? model.getCell(selectedContractComponentId) : null;
-
-        if (component == null)
+        if (cell == null) return;
+        var selectionCard = h('div', 'af-selection-card');
+        selectionCard.appendChild(h('div', 'af-selection-label', 'Figura lista para enlazar'));
+        selectionCard.appendChild(h('div', 'af-selection-name', labelFor(cell)));
+        var manualButton = h('button', 'af-manual-btn', 'Editar datos manuales de request / response');
+        manualButton.type = 'button';
+        mxEvent.addListener(manualButton, 'click', function()
         {
-            component = componentForCell(graph.getSelectionCell());
-        }
-
-        if (component == null)
-        {
-            for (var id in model.cells)
+            var steps = activeFlow().steps;
+            var found = -1;
+            for (var stepIndex = 0; stepIndex < steps.length; stepIndex++)
             {
-                var candidate = model.cells[id];
-                if (candidate != null && graph.getAttributeForCell(candidate, 'archiflowOpenApi', null) != null)
+                if (steps[stepIndex].cellId === cell.id)
                 {
-                    component = candidate;
+                    found = stepIndex;
                     break;
                 }
             }
-        }
 
-        if (component == null)
+            if (found < 0)
+            {
+                toast('Añade esta figura al flujo para registrar manualmente sus datos');
+                return;
+            }
+
+            selectedStep = found;
+            panelMode = 'flow';
+            render();
+        });
+        selectionCard.appendChild(manualButton);
+        parent.appendChild(selectionCard);
+    }
+
+    function renderContract()
+    {
+        contractContent.innerHTML = '';
+        var selectedCell = selectedContractCell();
+        contractTarget.textContent = selectedCell != null ?
+            'Figura seleccionada · ' + labelFor(selectedCell) :
+            'Selecciona cualquier figura para enlazarla; importar no requiere selección.';
+        var contracts = store.contracts || [];
+        appendSelectedCellCard(contractContent, selectedCell);
+
+        if (contracts.length === 0)
         {
-            contractTarget.textContent = 'Selecciona un componente UML';
-            contractContent.appendChild(h('div', 'af-contract-empty', 'Selecciona el componente del microservicio y pulsa “Importar OpenAPI”. El contrato quedará asociado a ese componente.'));
+            contractContent.appendChild(h('div', 'af-contract-empty',
+                'Importa uno o varios contratos OpenAPI. Quedarán en esta biblioteca sin modificar ni redimensionar ninguna figura del diagrama.'));
             return;
         }
 
-        selectedContractComponentId = component.id;
-        contractTarget.textContent = labelFor(component);
-        var raw = graph.getAttributeForCell(component, 'archiflowOpenApi', null);
+        var libraryHead = h('div', 'af-library-head');
+        libraryHead.appendChild(h('div', 'af-library-title', 'Biblioteca de contratos'));
+        libraryHead.appendChild(h('span', 'af-library-count', String(contracts.length)));
+        contractContent.appendChild(libraryHead);
+        var library = h('div', 'af-contract-library');
 
-        if (raw == null)
+        for (var contractIndex = 0; contractIndex < contracts.length; contractIndex++)
         {
-            contractContent.appendChild(h('div', 'af-contract-empty', 'Este componente todavía no tiene contrato. Puedes cargar OpenAPI 3.x o Swagger 2.0 en JSON, YAML o YML.'));
-            return;
+            (function(contractRecord)
+            {
+                var pill = h('button', 'af-contract-pill' +
+                    (contractRecord.id === store.activeContractId ? ' af-active' : ''));
+                pill.type = 'button';
+                pill.appendChild(h('span', 'af-contract-pill-name', contractRecord.name));
+                pill.appendChild(h('span', 'af-contract-pill-file', contractRecord.fileName || 'openapi'));
+                mxEvent.addListener(pill, 'click', function()
+                {
+                    store.activeContractId = contractRecord.id;
+                    saveStore('Contrato seleccionado');
+                    render();
+                });
+                library.appendChild(pill);
+            })(contracts[contractIndex]);
         }
 
-        var contract;
-        try
-        {
-            contract = JSON.parse(raw);
-        }
-        catch (error)
-        {
-            contractContent.appendChild(h('div', 'af-contract-empty', 'El contrato asociado no se puede leer. Vuelve a importarlo.'));
-            return;
-        }
+        contractContent.appendChild(library);
+
+        var contractRecord = activeContract();
+        var contract = contractRecord.document || {};
 
         var info = contract.info || {};
         var apiInfo = h('div', 'af-api-info');
-        apiInfo.appendChild(h('div', 'af-api-title', info.title || labelFor(component)));
+        apiInfo.appendChild(h('div', 'af-api-title', info.title || contractRecord.name));
         apiInfo.appendChild(h('div', 'af-api-meta', (contract.openapi ? 'OpenAPI ' + contract.openapi : 'Swagger ' + contract.swagger) +
             (info.version ? ' · versión ' + info.version : '')));
         if (contract.servers != null && contract.servers.length > 0)
@@ -2391,7 +3046,7 @@ Draw.loadPlugin(function(ui)
             contractContent.appendChild(h('div', 'af-tag', order[j]));
             for (var k = 0; k < groups[order[j]].length; k++)
             {
-                renderSwaggerOperation(contractContent, groups[order[j]][k]);
+                renderSwaggerOperation(contractContent, groups[order[j]][k], contractRecord);
             }
         }
     }
@@ -2399,13 +3054,15 @@ Draw.loadPlugin(function(ui)
     function renderPanelMode()
     {
         var contractActive = panelMode === 'contract';
+        var playbackActive = !contractActive && playing;
+        panel.classList.toggle('af-playback-mode', playbackActive);
         contractNavButton.classList.toggle('af-active', contractActive);
         flowNavButton.classList.toggle('af-active', !contractActive);
         contractTools.style.display = contractActive ? '' : 'none';
         contractContent.style.display = contractActive ? '' : 'none';
-        flowbar.style.display = contractActive ? 'none' : '';
-        stepsStrip.style.display = contractActive ? 'none' : '';
-        stepActions.style.display = contractActive || activeFlow().steps.length === 0 ? 'none' : 'flex';
+        flowbar.style.display = contractActive || playbackActive ? 'none' : 'grid';
+        stepsStrip.style.display = contractActive || playbackActive ? 'none' : 'flex';
+        stepActions.style.display = contractActive || playbackActive || activeFlow().steps.length === 0 ? 'none' : 'grid';
         content.style.display = contractActive ? 'none' : '';
     }
 
@@ -2554,23 +3211,21 @@ Draw.loadPlugin(function(ui)
                     }
                 }
             };
-            graph.setAttributeForCell(serviceA, 'archiflowOpenApi', JSON.stringify(clientesContract));
-            graph.setAttributeForCell(serviceA, 'archiflowContractFile', 'clientes-api.yaml');
-            graph.setAttributeForCell(serviceB, 'archiflowOpenApi', JSON.stringify(riesgoContract));
-            graph.setAttributeForCell(serviceB, 'archiflowContractFile', 'riesgo-api.yaml');
-
             var demoEndpoints = [
-                [clientesGet, 'GET', '/v1/clientes/{id}', 'consultarCliente'],
-                [clientesValidar, 'POST', '/v1/clientes/validar', 'validarCliente'],
-                [riesgoPerfil, 'GET', '/internal/perfil/{id}', 'obtenerPerfilRiesgo'],
-                [riesgoEvaluar, 'POST', '/internal/evaluaciones', 'evaluarSolicitud']
+                [clientesGet, 'contract-clientes', 'GET', '/v1/clientes/{id}', 'consultarCliente', 'Consultar cliente'],
+                [clientesValidar, 'contract-clientes', 'POST', '/v1/clientes/validar', 'validarCliente', 'Validar elegibilidad'],
+                [riesgoPerfil, 'contract-riesgo', 'GET', '/internal/perfil/{id}', 'obtenerPerfilRiesgo', 'Obtener perfil de riesgo'],
+                [riesgoEvaluar, 'contract-riesgo', 'POST', '/internal/evaluaciones', 'evaluarSolicitud', 'Evaluar solicitud']
             ];
             for (var endpointIndex = 0; endpointIndex < demoEndpoints.length; endpointIndex++)
             {
-                graph.setAttributeForCell(demoEndpoints[endpointIndex][0], 'archiflowContractEndpoint', '1');
-                graph.setAttributeForCell(demoEndpoints[endpointIndex][0], 'archiflowHttpMethod', demoEndpoints[endpointIndex][1]);
-                graph.setAttributeForCell(demoEndpoints[endpointIndex][0], 'archiflowPath', demoEndpoints[endpointIndex][2]);
-                graph.setAttributeForCell(demoEndpoints[endpointIndex][0], 'archiflowOperationId', demoEndpoints[endpointIndex][3]);
+                setCellBindings(demoEndpoints[endpointIndex][0], [{
+                    contractId: demoEndpoints[endpointIndex][1],
+                    method: demoEndpoints[endpointIndex][2],
+                    path: demoEndpoints[endpointIndex][3],
+                    operationId: demoEndpoints[endpointIndex][4],
+                    summary: demoEndpoints[endpointIndex][5]
+                }]);
             }
 
             var requestStyle = 'edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=3;fontSize=11;fontStyle=1;labelBackgroundColor=#ffffff;strokeColor=#4f46e5;exitX=1;exitY=.34;entryX=0;entryY=.34;';
@@ -2607,8 +3262,17 @@ Draw.loadPlugin(function(ui)
                 notes: 'La respuesta vuelve por una conexión UML explícita.'
             }));
 
-            store = { version: 1, activeFlowId: flow.id, flows: [flow] };
-            selectedContractComponentId = serviceA.id;
+            store = {
+                version: 2,
+                activeFlowId: flow.id,
+                flows: [flow],
+                activeContractId: 'contract-clientes',
+                contracts: [
+                    { id: 'contract-clientes', name: 'Clientes API', fileName: 'clientes-api.yaml', document: clientesContract },
+                    { id: 'contract-riesgo', name: 'Riesgo Internal API', fileName: 'riesgo-api.yaml', document: riesgoContract }
+                ]
+            };
+            selectedContractCellId = clientesGet.id;
             graph.setAttributeForCell(model.getRoot(), STORE_ATTRIBUTE, JSON.stringify(store));
         }
         finally
@@ -2628,6 +3292,7 @@ Draw.loadPlugin(function(ui)
     graph.addListener(mxEvent.ROOT, function()
     {
         stopPlayback();
+        flowHistory = {};
         loadStore();
         refreshBadges();
         render();

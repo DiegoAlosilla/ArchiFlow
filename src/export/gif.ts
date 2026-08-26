@@ -26,6 +26,10 @@ export interface GifOptions {
   height: number;
   /** Milisegundos por fotograma. El GIF los guarda en centésimas. */
   delayMs: number;
+  /** Número de repeticiones; 0 reproduce el GIF indefinidamente. */
+  repeat?: number;
+  /** Usa el primer color de la paleta como índice transparente. */
+  transparent?: boolean;
 }
 
 type Rgb = [number, number, number];
@@ -116,9 +120,14 @@ function buildLookup(palette: Rgb[]): Uint8Array {
   return lookup;
 }
 
-function quantize(data: Uint8ClampedArray, lookup: Uint8Array): Uint8Array {
+function quantize(data: Uint8ClampedArray, lookup: Uint8Array, transparent = false): Uint8Array {
   const indices = new Uint8Array(data.length / 4);
   for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    if (transparent && data[i + 3]! < 128) {
+      indices[p] = 0;
+      continue;
+    }
+
     const key = ((data[i]! >> 3) << 10) | ((data[i + 1]! >> 3) << 5) | (data[i + 2]! >> 3);
     indices[p] = lookup[key]!;
   }
@@ -271,7 +280,7 @@ export function encodeGif(frames: GifFrame[], palette: Rgb[], options: GifOption
   writer.string('NETSCAPE2.0');
   writer.byte(3);
   writer.byte(1);
-  writer.short(0);
+  writer.short(Math.max(0, Math.min(0xffff, options.repeat ?? 0)));
   writer.byte(0);
 
   const delay = Math.max(2, Math.round(delayMs / 10));
@@ -280,7 +289,7 @@ export function encodeGif(frames: GifFrame[], palette: Rgb[], options: GifOption
     writer.byte(0x21); // control gráfico
     writer.byte(0xf9);
     writer.byte(4);
-    writer.byte(0b000_001_00); // sin transparencia, restaurar al fondo no
+    writer.byte(0b000_001_00 | (options.transparent ? 1 : 0));
     writer.short(delay);
     writer.byte(0);
     writer.byte(0);
@@ -293,7 +302,7 @@ export function encodeGif(frames: GifFrame[], palette: Rgb[], options: GifOption
     writer.byte(0); // sin tabla local ni entrelazado
 
     writer.byte(minCodeSize);
-    writer.blocks(lzwCompress(quantize(frame.data, lookup), minCodeSize));
+    writer.blocks(lzwCompress(quantize(frame.data, lookup, options.transparent), minCodeSize));
   }
 
   writer.byte(0x3b); // fin del fichero
